@@ -129,4 +129,5 @@ if (Test-Path $rootCert) {
     Write-Warning "Caddy hasn't created its certificate yet. Check $AppDir\logs\DamageTrackerCaddy.log, then run this script again."
 }
 
+& "$AppDir\deploy\windows\add-shortcut.ps1" -AppDir $AppDir
 Write-Host "`nDone. Open https://$HostName in a browser." -ForegroundColor Green

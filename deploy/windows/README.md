@@ -77,7 +77,8 @@ To go back to HTTPS, copy `Caddyfile.https.bak` over `Caddyfile`, remove the `FA
 
 - Both services start by themselves when the PC starts, even if nobody logs in, and restart if they crash.
 - Logs are in `C:\DamageTracker\logs`.
-- To stop or start: *Services* app, or `tools\nssm.exe restart DamageTrackerWeb` in an admin terminal.
+- To start or restart: double-click **Damage Tracker - Start or Restart** on the desktop. It asks for administrator rights, restarts the program, checks it can open its database, and shows the addresses to open it on (`http://<pcname>.local` and the PC's current IP addresses). `install.ps1` and `update.ps1` create the shortcut; to add it again, run `deploy\windows\add-shortcut.ps1` as admin.
+- To stop: *Services* app, or `tools\nssm.exe restart DamageTrackerWeb` in an admin terminal.
 
 ## Updating to a new version
 
