@@ -52,7 +52,7 @@ class ItemChange(models.Model):
 class Ticket(models.Model):
     class Status(models.TextChoices):
         OPEN = "open", "Open"
-        IN_PROGRESS = "in_progress", "In Progress"
+        IN_PROGRESS = "in_progress", "Repair in Progress"
         RESOLVED = "resolved", "Resolved"
 
     class FaultType(models.TextChoices):
