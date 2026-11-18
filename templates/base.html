@@ -1,0 +1,37 @@
+{% load static %}<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Faults{% endblock %} · Equipment Damage Tracker</title>
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  <script src="{% static 'js/app.js' %}" defer></script>
+</head>
+<body>
+{% if user.is_authenticated %}
+<header class="topbar">
+  <a class="brand" href="{% url 'home' %}">Damage Tracker</a>
+  <nav>
+    <a href="{% url 'home' %}">Search</a>
+    <a href="{% url 'open_tickets' %}">Open tickets</a>
+    <a href="{% url 'item_list' %}">Items</a>
+    <a href="{% url 'item_type_list' %}">Item types</a>
+    {% if perms_ok.manage_users %}<a href="{% url 'user_list' %}">Users</a>{% endif %}
+    {% if perms_ok.manage_roles %}<a href="{% url 'role_list' %}">Roles</a>{% endif %}
+  </nav>
+  <form method="post" action="{% url 'logout' %}" class="logout">{% csrf_token %}
+    <span class="who">{{ user.label }}</span>
+    <button type="submit" class="link">Log out</button>
+  </form>
+</header>
+{% endif %}
+<main>
+  {% for message in messages %}<div class="flash flash-{{ message.tags }}">{{ message }}</div>{% endfor %}
+  {% block content %}{% endblock %}
+</main>
+<dialog id="history-dialog">
+  <div id="history-body">Loading…</div>
+  <form method="dialog"><button class="btn">Close</button></form>
+</dialog>
+</body>
+</html>

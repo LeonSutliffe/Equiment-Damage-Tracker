@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Item types{% endblock %}
+{% block content %}
+<div class="head-row"><h1>Item types</h1>{% if perms_ok.manage_item_types %}<a class="btn primary" href="{% url 'item_type_create' %}">+ New item type</a>{% endif %}</div>
+<table class="list">
+  <thead><tr><th>Name</th><th>Description</th><th>Items</th><th></th></tr></thead>
+  <tbody>
+  {% for t in types %}
+    <tr class="{% if not t.active %}muted{% endif %}">
+      <td><a href="{% url 'item_list' %}?type={{ t.pk }}">{{ t.name }}</a>{% if not t.active %} (inactive){% endif %}</td>
+      <td>{{ t.description }}</td><td>{{ t.item_count }}</td>
+      <td class="actions">{% if perms_ok.manage_item_types %}<a href="{% url 'item_type_edit' t.pk %}">Edit</a>{% endif %}</td>
+    </tr>
+  {% empty %}<tr><td colspan="4">No item types yet.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% endblock %}

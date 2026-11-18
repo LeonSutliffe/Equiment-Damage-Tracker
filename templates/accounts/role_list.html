@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Roles{% endblock %}
+{% block content %}
+<div class="head-row"><h1>Roles</h1>
+  <div><a class="btn" href="{% url 'permission_log' %}">Change log</a> <a class="btn primary" href="{% url 'role_create' %}">+ New role</a></div>
+</div>
+{% for role in roles %}
+<div class="card">
+  <div class="head-row"><h2>{{ role.name }}</h2><a class="btn" href="{% url 'role_edit' role.pk %}">Edit</a></div>
+  {% if role.description %}<p>{{ role.description }}</p>{% endif %}
+  <p class="chips">{% for p in role.permissions.all %}<span class="chip">{{ p.name }}</span>{% empty %}<em>No permissions</em>{% endfor %}</p>
+  <p class="muted">{{ role.users.count }} user{{ role.users.count|pluralize }}</p>
+</div>
+{% endfor %}
+{% endblock %}

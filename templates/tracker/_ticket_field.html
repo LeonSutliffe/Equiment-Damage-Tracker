@@ -1,0 +1,8 @@
+<div class="field{% if field.errors %} has-error{% endif %}"{% if ticket %} data-history="{% url 'ticket_history' ticket.number name %}"{% endif %}>
+  <div class="label-row">
+    <label{% if field.id_for_label %} for="{{ field.id_for_label }}"{% endif %}>{{ field.label }}</label>
+    {% if ticket %}<button type="button" class="history-btn" data-history-open aria-label="Show {{ field.label }} history" title="Show history">&#128339;</button>{% endif %}
+  </div>
+  {{ field }}
+  {% for e in field.errors %}<div class="error">{{ e }}</div>{% endfor %}
+</div>

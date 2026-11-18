@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+data/
+staticfiles/
+faults.env
+logs/
+caddy/data/
+caddy/config/
+*.sqlite3

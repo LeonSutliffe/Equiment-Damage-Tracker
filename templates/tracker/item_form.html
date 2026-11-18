@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="narrow">
+  <h1>{{ title }}</h1>
+  {% if no_types %}
+    <div class="flash flash-warning">There are no item types yet.
+      {% if perms_ok.manage_item_types %}<a href="{% url 'item_type_create' %}">Add an item type</a> first.{% else %}Ask an admin to add one.{% endif %}
+    </div>
+  {% endif %}
+  <form method="post" class="card">{% csrf_token %}
+    {% include "_form_fields.html" %}
+    <button type="submit" class="btn primary">Save</button>
+    <a class="btn" href="{% if item %}{% url 'item_detail' item.pk %}{% else %}{% url 'home' %}{% endif %}">Cancel</a>
+  </form>
+</div>
+{% endblock %}
