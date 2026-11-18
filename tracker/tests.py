@@ -123,7 +123,7 @@ class TrackerTests(TestCase):
         changed = set(FieldChange.objects.filter(ticket=t, note="").values_list("field", flat=True))
         self.assertEqual(changed, {"status", "fault_description"})
         r = self.client.get(reverse("ticket_history", args=[t.number, "status"]))
-        self.assertContains(r, "Open → In Progress")
+        self.assertContains(r, "Open → Repair in Progress")
         self.assertContains(r, "J. Smith")
 
     def test_concurrent_edit_is_refused(self):

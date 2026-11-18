@@ -16,3 +16,4 @@ Pop-Location
 . "$AppDir\deploy\windows\protect-data.ps1"
 if (Test-AppHealth) { Write-Host "Updated and restarted. The app can open its database." -ForegroundColor Green }
 else { Write-Warning "The app restarted but can't open its database. Check $AppDir\logs\DamageTrackerWeb.log." }
+& "$AppDir\deploy\windows\add-shortcut.ps1" -AppDir $AppDir

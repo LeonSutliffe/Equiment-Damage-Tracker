@@ -36,7 +36,7 @@ From Leon, 2026-11-18:
 | Items | Every stock item has two unique identifiers, a barcode and a serial number, plus an item type shared by items of the same kind. Created manually in the program (stock system export later). |
 | Lookup | Enter a barcode, ticket number or serial number to find the item or ticket; create the item if it doesn't exist. |
 | Tickets | Each has its own identifier. Can be created, edited, resolved and reopened. |
-| Ticket fields | Status (Open, In Progress, Resolved), Fault Type (Cosmetic, Functionality, Safety), Severity, Fault Description (text box), Photos (shows all uploaded photos), Work Done (text box). |
+| Ticket fields | Status (Open, Repair in Progress, Resolved), Fault Type (Cosmetic, Functionality, Safety), Severity, Fault Description (text box), Photos (shows all uploaded photos), Work Done (text box). |
 | Item vs ticket | An item is one physical unit and can have many tickets over the years. Ticket numbers look like `T-00042`. Resolved is the final state, but any resolved ticket can be reopened. |
 | Access | Local network only. |
 | Field history | Long-press a field to see a popup of its edit history: user, date and time. |
@@ -180,7 +180,7 @@ The ticket number, item type and serial number sit at the top, then the fields:
 │  T-00042 · Step ladder 3m (LD-0087)   │
 │                                       │
 │  Status                               │
-│  [ Open | In Progress | Resolved ]    │
+│  [ Open | Repair in Progress | Resolved ]    │
 │                                       │
 │  Fault Type                           │
 │  [ Cosmetic | Functionality | Safety ]│
@@ -205,13 +205,13 @@ The ticket number, item type and serial number sit at the top, then the fields:
 └───────────────────────────────────────┘
 ```
 
-- **Status:** Open, In Progress, Resolved. A new ticket starts as Open.
+- **Status:** Open, Repair in Progress, Resolved. A new ticket starts as Open.
 - **Fault Type:** Cosmetic, Functionality or Safety. Required.
 - **Severity:** Low, Medium or High. Required.
 - **Fault Description:** multi-line text.
 - **Photos:** shows every photo uploaded to the ticket as thumbnails. Tap to view full size. **Add photo** opens the phone camera or the file picker. Photos are never silently deleted; removing one hides it and is logged.
 - **Work Done:** multi-line text describing the repair or action taken.
-- **Resolve:** set Status to Resolved and save. **Reopen:** on a resolved ticket, set Status back to Open (or In Progress) and save. Both are logged like any other change.
+- **Resolve:** set Status to Resolved and save. **Reopen:** on a resolved ticket, set Status back to Open (or Repair in Progress) and save. Both are logged like any other change.
 - If two people edit the same ticket at once, the second save is warned that the ticket changed and shown the latest version, so nothing is overwritten unseen.
 
 ### 5.5 Field edit history (long press)
@@ -240,7 +240,7 @@ Someone with `manage_checks` starts a **Check** (e.g. "Annual check 2026") when 
 
 ### 5.7 Lists and export
 
-- **Open tickets:** everything Open or In Progress. Safety faults and High severity first, then oldest first. Filter by fault type, severity and item type.
+- **Open tickets:** everything Open or Repair in Progress. Safety faults and High severity first, then oldest first. Filter by fault type, severity and item type.
 - **Check summary:** tickets created during a chosen check, by status, fault type, severity and item type.
 - **Item history:** every ticket for one item.
 - **Item type history:** every ticket across all items of one type, to spot types that fail often.
