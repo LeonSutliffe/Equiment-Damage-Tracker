@@ -114,8 +114,13 @@ td.actions { white-space: nowrap; }
 .photo img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); display: block; }
 .add-photo { position: relative; overflow: hidden; }
 .add-photo input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-.photo-preview { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-.photo-preview img { width: 72px; height: 72px; object-fit: cover; border-radius: 6px; border: 2px dashed var(--primary); }
+.photo-buttons { display: flex; gap: 8px; }
+.photo-buttons .btn { flex: 1; }
+.photo-preview { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.photo-preview figure.pending { position: relative; margin: 0; }
+.photo-preview img { width: 80px; height: 80px; object-fit: cover; border-radius: 6px; border: 2px dashed var(--primary); display: block; }
+.photo-preview .drop { position: absolute; top: -8px; right: -8px; width: 28px; height: 28px; border-radius: 50%; border: 0;
+  background: var(--danger); color: #fff; font-size: 18px; line-height: 1; cursor: pointer; }
 .photo-preview p { width: 100%; margin: 0; }
 
 /* History popup */

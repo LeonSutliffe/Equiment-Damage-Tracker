@@ -63,6 +63,15 @@ class AccountTests(TestCase):
         self.assertRedirects(r, reverse("user_list"))
         self.assertTrue(User.objects.get(username="new").check_password("Ladder-check-2026"))
 
+    def test_simple_passwords_allowed(self):
+        self.client.force_login(self.admin)
+        self.client.post(reverse("user_create"), {
+            "username": "bob", "display_name": "", "role": self.user_role.pk, "password1": "1", "password2": "1",
+        })
+        self.assertTrue(User.objects.get(username="bob").check_password("1"))
+        self.client.post(reverse("user_password", args=[self.user.pk]), {"password1": "a", "password2": "a"})
+        self.assertTrue(User.objects.get(pk=self.user.pk).check_password("a"))
+
     def test_createsuperuser_gets_admin_role(self):
         u = User.objects.create_superuser("boss", password="pw-123456!")
         self.assertEqual(u.role, self.admin_role)

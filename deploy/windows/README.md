@@ -10,7 +10,7 @@ Everything lives in `C:\DamageTracker`. Allow about 30 minutes.
 ## 1. Prepare the PC
 
 1. **Fixed address.** Ask whoever runs the router to give this PC a fixed IP address (a DHCP reservation).
-2. **A name staff can type.** Pick one, for example `faults.local`, and ask for a DNS entry on the router pointing it at the PC's IP address. If that isn't possible, staff can use the PC's own name (shown in *Settings → System → About*); the install script sets that name up too.
+2. **A name staff can type.** Pick one, for example `faults.local`, and ask for a DNS entry on the router pointing it at the PC's IP address. If that isn't possible, use the PC's fixed IP address as the name (e.g. `-HostName 192.168.1.50`). The PC's own name is also added if it has no underscores.
 3. **Stay awake.** *Settings → System → Power*: set *Sleep* to *Never*. In *Windows Update → Advanced options → Active hours*, set your working hours so it doesn't restart mid-check.
 4. **Private network.** *Settings → Network & internet → (your connection) → Properties*: set the network profile to **Private**.
 
@@ -62,6 +62,16 @@ Because the site is only on the local network, Caddy makes its own certificate. 
 - **Android**: *Settings → Security → More security settings → Encryption & credentials → Install a certificate → CA certificate*, and pick the file. (Menu names vary by phone.)
 
 If your workplace IT already runs its own certificate authority, they can issue a certificate for the site instead, and devices that already trust it need nothing. Ask them, then replace `tls internal` in the Caddyfile with `tls C:/path/cert.pem C:/path/key.pem`.
+
+## Using plain HTTP instead (no certificate on devices)
+
+If you don't want to install the certificate on every device, switch the program to plain HTTP. Devices then open `http://<PC's IP address>` with nothing to install. Browsers show "Not secure" in the address bar, and traffic on the Wi-Fi isn't encrypted. In an admin PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\DamageTracker\deploy\windows\use-http.ps1
+```
+
+To go back to HTTPS, copy `Caddyfile.https.bak` over `Caddyfile`, remove the `FAULTS_HTTPS=0` and `FAULTS_ALLOWED_HOSTS=*` lines from `faults.env`, and restart both services.
 
 ## Everyday running
 
