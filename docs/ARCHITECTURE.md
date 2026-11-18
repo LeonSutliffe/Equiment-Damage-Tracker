@@ -1,6 +1,6 @@
 # Equipment Damage Tracker: Architecture
 
-**Status:** Draft v6 for review. No code yet.
+**Status:** Draft v7. All open questions answered. for review. No code yet.
 **Last updated:** 2026-11-18
 
 ## 1. Purpose
@@ -44,7 +44,7 @@ From Leon, 2026-11-18:
 | Hosting | A local Windows machine at work. Users open a web page from their browser. |
 | Login | Username and password stored in the program. Not tied to email or Microsoft 365. |
 
-## 3. Assumptions still to confirm
+## 3. Decisions
 
 Confirmed by Leon on 2026-11-18:
 
@@ -54,16 +54,13 @@ Confirmed by Leon on 2026-11-18:
 - Access is over the local network only.
 - Severity has three levels: **Low**, **Medium**, **High**.
 - On a PC, where there's no long press, a right-click or a small history icon next to the field opens the same history popup.
-- Permissions are configurable per role by an admin, and any user can be given admin rights (see section 4).
-- No backups are needed for now (see 7.5).
+- Permissions are configurable per role by an admin, and any user can be given admin rights. The default User and Admin roles in section 4 are the starting point.
+- Item types are a list managed in the program (e.g. "Step ladder 3m", "Drill 18V"). By default only roles with `manage_item_types` can add or rename them.
+- Barcodes are **typed in by hand or read with a handheld scanner**. No phone camera scanning.
+- The program is served over **HTTPS**.
+- The host is a **desktop PC running Windows Home**, switched on during working hours. It may be migrated to another machine later.
+- No backups are needed for now (see 7.7).
 - Tech stack: Option A (Django).
-
-Still to confirm:
-
-| # | Assumption |
-|---|------------|
-| A5 | Item types are a list managed in the program (e.g. "Step ladder 3m", "Drill 18V"). By default only roles with `manage_item_types` can add or rename them, which an admin can change. |
-| A6 | The Windows machine is on during working hours. |
 
 ## 4. Users, roles and permissions
 
@@ -132,12 +129,12 @@ These are set up on first install and can be changed afterwards.
 
 ### 5.1 Home / lookup screen
 
-After login, the user lands on one search box with a camera button for barcode scanning (see Q4):
+After login, the user lands on one search box. The cursor is already in it, so a handheld scanner can be used straight away: the scanner "types" the barcode and presses Enter, which runs the search. Typing a barcode, serial or ticket number by hand and pressing Search works the same way.
 
 ```
 ┌───────────────────────────────────────┐
 │  Barcode, serial or ticket number     │
-│  [______________________] [Search] 📷 │
+│  [______________________] [Search]    │
 │                                       │
 │  Open tickets (12)  ·  All items      │
 └───────────────────────────────────────┘
@@ -289,11 +286,18 @@ Everything runs on the one Windows machine.
 
 ```
  Phones / tablets / PCs on the work network
-            │  browser, http(s)://<server-name>:<port>
+            │  browser, https://faults.local (example)
             ▼
 ┌─────────────────────────────────────────────┐
-│  Windows machine                            │
+│  Desktop PC, Windows Home                   │
 │                                             │
+│  ┌───────────────────────────────────────┐  │
+│  │ Caddy (Windows service)               │  │
+│  │  - HTTPS on port 443                  │  │
+│  │  - forwards to the web application    │  │
+│  └──────────────────┬────────────────────┘  │
+│                     │ http://127.0.0.1:8000 │
+│                     ▼                       │
 │  ┌───────────────────────────────────────┐  │
 │  │ Web application (Windows service)     │  │
 │  │  - login and sessions                 │  │
@@ -313,7 +317,7 @@ Everything runs on the one Windows machine.
 
 ### 7.1 Web application
 
-A single program that serves the pages and holds all the rules. Pages are built on the server and kept simple, with large touch targets. A small amount of JavaScript handles the long press, the history popup, photo previews and barcode scanning. No app needs installing.
+A single program that serves the pages and holds all the rules. Pages are built on the server and kept simple, with large touch targets. A small amount of JavaScript handles the long press, the history popup, and photo previews. No app needs installing.
 
 ### 7.2 Database
 
@@ -323,13 +327,27 @@ A single program that serves the pages and holds all the rules. Pages are built 
 
 Uploaded photos are resized (longest edge about 2000 px) and saved in a folder on the machine, with a thumbnail for the ticket screen. Files get random names, not user-supplied ones, and are only served to logged-in users.
 
-### 7.4 Running on Windows
+### 7.4 Running on Windows Home
 
-- Installed as a Windows service so it starts with the machine and restarts if it crashes.
-- One Windows Firewall rule opens the program's port to the local network only.
-- Staff use a short address such as `http://faults-pc:8000`, saved as a bookmark or home-screen shortcut.
+- The web application (Waitress) and Caddy are each installed as a Windows service with NSSM or WinSW, so they start with the PC, run without anyone logged in, and restart if they crash. This works on Windows Home; no Windows Server or IIS is needed.
+- The web application only listens on `127.0.0.1`, so it can't be reached except through Caddy.
+- One Windows Firewall rule opens port 443 to the local network only.
+- The PC needs a fixed IP address (a DHCP reservation on the router) and a name staff can type, e.g. `faults.local` or the PC's own name.
+- Power settings: sleep and hibernate turned off, so the PC stays reachable during working hours. Windows Update "active hours" set to working hours so it doesn't restart mid-check.
 
-### 7.5 Backups
+### 7.5 HTTPS
+
+- **Caddy** sits in front of the web application and handles HTTPS. It is a single program with a short config file.
+- Because the site is only on the local network, a public certificate isn't available. Caddy creates its own small certificate authority ("internal CA") and issues the site certificate from it, renewing it automatically.
+- Each phone, tablet and PC that uses the program must **trust Caddy's root certificate once**. On Windows PCs this can be pushed out or installed by double-clicking; on phones it's installed as a profile (iPhone) or under security settings (Android). Until then, browsers show a "not secure" warning.
+- If the workplace's IT or security systems already have their own internal certificate authority, a certificate from it can be used instead, and devices that already trust that authority need no setup. Worth asking IT.
+- Django is set to require HTTPS: secure cookies, redirect HTTP to HTTPS, and HSTS.
+
+### 7.6 Migrating to another machine later
+
+Everything the program needs is in one folder: the code, the SQLite database file, the photos folder and the Caddy config and certificates. Moving to a new PC or server is: install Python and Caddy, copy the folder, install the two services, point the name `faults.local` (or whatever is chosen) at the new machine. Keeping the same name and Caddy certificate authority means devices don't need to trust a new certificate.
+
+### 7.7 Backups
 
 Not needed for now, at Leon's request. Note the risk: all data lives on one machine, so a disk failure, theft or accidental deletion would lose every ticket and photo.
 
@@ -342,10 +360,10 @@ Because everything is in two places (the database file and the photos folder), a
 - **Framework:** Django. Includes username/password login, password hashing, sessions and a built-in groups-and-permissions system that maps directly onto the roles in section 4 (a role is a Django group). The Roles screen is a simple custom page on top of it.
 - **Pages:** Django templates, a small CSS framework (e.g. Bootstrap or Pico.css), and HTMX for the history popup and photo uploads without full page reloads.
 - **Long press:** a few lines of plain JavaScript (pointer events with a ~500 ms timer, plus right-click and a history icon for PCs).
-- **Barcode scanning:** the browser's BarcodeDetector API where available (Chrome/Edge on Android), with a JavaScript library such as ZXing as a fallback for iPhones.
+- **Barcode input:** a normal text box. Handheld USB or Bluetooth scanners act like a keyboard, so no extra code or drivers are needed.
 - **Database:** SQLite (built in).
 - **Photos:** Pillow for resizing and thumbnails.
-- **Running on Windows:** Waitress web server wrapped as a Windows service with NSSM or WinSW.
+- **Running on Windows:** Waitress web server and Caddy (for HTTPS), each wrapped as a Windows service with NSSM or WinSW.
 
 Why: login, admin and database handling come out of the box, so the effort goes into the lookup and ticket screens. Runs well on Windows with nothing else to install.
 
@@ -359,7 +377,7 @@ Not recommended: you'd prefer local logins, and per-field history with a long-pr
 
 ### Decision
 
-**Option A: Django + SQLite + Waitress as a Windows service.** Confirmed by Leon on 2026-11-18.
+**Option A: Django + SQLite + Waitress, behind Caddy for HTTPS, as Windows services.** Confirmed by Leon on 2026-11-18.
 
 ## 9. Security
 
@@ -367,7 +385,7 @@ Not recommended: you'd prefer local logins, and per-field history with a long-pr
 - Every page and photo requires login; each action requires the matching permission (section 4).
 - Framework defaults protect against CSRF, XSS and SQL injection.
 - Uploads limited to image types and a maximum size.
-- **HTTPS:** plain HTTP on the local network is simplest, but passwords then cross the Wi-Fi unencrypted. Note that some phone browsers only allow live camera access for barcode scanning over HTTPS. Recommended: an internal certificate or a reverse proxy such as Caddy. See Q5.
+- **HTTPS everywhere** via Caddy with an internal certificate (7.5). HTTP requests are redirected to HTTPS.
 - Firewall rule restricts access to the local network.
 
 ## 10. Non-functional requirements
@@ -383,13 +401,12 @@ Not recommended: you'd prefer local logins, and per-field history with a long-pr
 
 ## 11. Delivery plan (suggested)
 
-1. **MVP:** login, configurable roles and permissions, lookup by barcode/serial/ticket number (typed), create item, ticket screen with all six fields, item types, photo upload and display, resolve/reopen, field change history with long-press popup, open-tickets list. Install as a Windows service.
-2. **Phase 2:** camera barcode scanning, yearly checks and check summary, CSV export, printable ticket sheet, HTTPS.
-3. **Later (optional):** nightly backups, import items from the stock system's barcode export, move to a server.
+1. **MVP:** login, configurable roles and permissions, lookup by barcode/serial/ticket number (typed or handheld scanner), create item, ticket screen with all six fields, item types, photo upload and display, resolve/reopen, field change history with long-press popup, open-tickets list. HTTPS via Caddy. Install both as Windows services on the desktop PC.
+2. **Phase 2:** yearly checks and check summary, CSV export, printable ticket sheet.
+3. **Later (optional):** nightly backups, phone camera barcode scanning, migration to another machine, import items from the stock system's barcode export, move to a server.
 
-## 12. Open questions for Leon
+## 12. Open questions
 
-1. **Barcode scanning:** Will people type barcodes, use the phone camera, or use a handheld USB/Bluetooth scanner? (A handheld scanner just "types" into the search box, so it works with no extra effort.)
-2. **HTTPS:** Is plain HTTP acceptable on your internal network, given that phone camera scanning may need HTTPS?
-3. **Default permissions:** Are the default User and Admin roles in section 4 a sensible starting point? (They can be changed in the program at any time.)
-4. **The Windows machine:** Desktop PC or server? On all day? Who handles Windows updates?
+None outstanding. All questions were answered by Leon on 2026-11-18 (see section 3).
+
+One thing to check before installing: whether the workplace's IT or security team has an internal certificate authority that should issue the HTTPS certificate instead of Caddy's own (7.5).
