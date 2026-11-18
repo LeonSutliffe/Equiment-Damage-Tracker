@@ -313,3 +313,45 @@ class CommentTests(TestCase):
         self.assertIn("Waiting for parts", ws[2][col].value)
         r = self.client.get(reverse("reports"), {"action": "pdf"})
         self.assertTrue(r.content.startswith(b"%PDF"))
+
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class LabelTests(TestCase):
+    def setUp(self):
+        admin = User.objects.create_user("leon", password="x", role=Role.objects.get(name="Admin"))
+        item = Item.objects.create(item_type=ItemType.objects.create(name="Ladder"), barcode="501234567", serial_number="LD-1")
+        for sev in ("low", "medium", "high"):
+            create_ticket(item, admin, {"fault_type": "safety", "severity": sev})
+        self.client.force_login(admin)
+
+    def pages(self, content):
+        return content.count(b"/Type /Page\n") or content.count(b"/Type /Page ") or content.count(b"/Type /Page>")
+
+    def test_layout_geometry(self):
+        from . import labels
+
+        self.assertAlmostEqual(labels.LEFT, 4.75, places=2)
+        self.assertAlmostEqual(labels.TOP, 10.7, places=2)
+        x, y = labels.label_position(64)  # bottom-right label ends at the sheet's mirrored margins
+        self.assertAlmostEqual(x + labels.LABEL_W, 210 - 4.75, places=2)
+        self.assertAlmostEqual(y + labels.LABEL_H, 297 - 10.7, places=2)
+
+    def test_labels_pdf(self):
+        r = self.client.get(reverse("reports"), {"action": "labels"})
+        self.assertEqual(r["Content-Type"], "application/pdf")
+        self.assertIn("labels_", r["Content-Disposition"])
+        self.assertTrue(r.content.startswith(b"%PDF"))
+
+    def test_page_count(self):
+        from .labels import build_labels_pdf
+
+        tickets = list(Ticket.objects.select_related("item")) * 30  # 90 labels -> 2 sheets
+        one = build_labels_pdf(tickets[:65])
+        two = build_labels_pdf(tickets)
+        filled = build_labels_pdf(tickets[:3], fill_templates=True, template_severity="high")
+        offset = build_labels_pdf(tickets[:3], start_at=64)  # 64, 65, then next sheet
+        from fpdf import FPDF  # noqa: F401
+        import re
+
+        count = lambda b: len(re.findall(rb"/Type /Page\b(?!s)", b))  # noqa: E731
+        self.assertEqual((count(one), count(two), count(filled), count(offset)), (1, 2, 1, 2))

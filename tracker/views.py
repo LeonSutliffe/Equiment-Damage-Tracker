@@ -317,6 +317,19 @@ def reports(request):
             )
             response["Content-Disposition"] = f'attachment; filename="tickets_{stamp}.xlsx"'
             return response
+        if action == "labels":
+            from .labels import build_labels_pdf
+
+            pdf = build_labels_pdf(
+                tickets.select_related("item"),
+                fill_templates=data.get("fill_templates"),
+                template_severity=data.get("template_colour") or "none",
+                start_at=data.get("label_start") or 1,
+                outlines=data.get("label_outlines"),
+            )
+            response = HttpResponse(pdf, content_type="application/pdf")
+            response["Content-Disposition"] = f'attachment; filename="labels_{stamp}.pdf"'
+            return response
         if action == "pdf":
             response = HttpResponse(build_pdf(tickets, data), content_type="application/pdf")
             response["Content-Disposition"] = f'attachment; filename="tickets_{stamp}.pdf"'

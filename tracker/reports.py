@@ -32,6 +32,20 @@ class ReportForm(forms.Form):
     )
     include_photos = forms.BooleanField(required=False, label="Include photos")
 
+    # Sticker sheet options (65 per A4 sheet).
+    label_start = forms.IntegerField(
+        required=False, min_value=1, max_value=65, initial=1, label="Start at label",
+        help_text="1 = top left. Use a later number to finish a part-used sheet.",
+    )
+    fill_templates = forms.BooleanField(
+        required=False, label="Fill the rest of the last sheet with write-in labels"
+    )
+    template_colour = forms.ChoiceField(
+        required=False, label="Write-in label colour",
+        choices=[("none", "Grey")] + [(v, l) for v, l in Ticket.Severity.choices],
+    )
+    label_outlines = forms.BooleanField(required=False, label="Draw label outlines (for a test print on plain paper)")
+
     def clean(self):
         data = super().clean()
         if data.get("created_from") and data.get("created_to") and data["created_from"] > data["created_to"]:
