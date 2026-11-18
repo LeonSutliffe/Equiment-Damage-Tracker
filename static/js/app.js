@@ -67,25 +67,53 @@
     if (btn && !window.confirm(btn.getAttribute("data-confirm"))) e.preventDefault();
   });
 
-  // Preview photos chosen but not yet saved.
-  document.querySelectorAll("input[type=file][multiple]").forEach(function (input) {
-    var box = document.querySelector('[data-preview-for="' + input.id + '"]');
-    if (!box) return;
-    input.addEventListener("change", function () {
-      box.innerHTML = "";
-      Array.prototype.forEach.call(input.files, function (f) {
-        if (!f.type || f.type.indexOf("image/") !== 0) return;
-        var img = document.createElement("img");
-        img.src = URL.createObjectURL(f);
-        img.alt = f.name;
-        box.appendChild(img);
+  // Photos: "Take photo" opens the camera, "From gallery" the picker. Each time a
+  // photo is chosen, that input is parked (so it is still sent on Save) and a fresh
+  // one takes its place, so several photos can be taken one after another.
+  document.querySelectorAll("[data-photo-picker]").forEach(function (picker) {
+    var form = picker.closest("form");
+    var store = form.querySelector("[data-photo-store]");
+    var preview = form.querySelector("[data-photo-preview]");
+
+    function render() {
+      preview.innerHTML = "";
+      var count = 0;
+      store.querySelectorAll("input[type=file]").forEach(function (input) {
+        Array.prototype.forEach.call(input.files, function (f) {
+          count++;
+          var fig = document.createElement("figure");
+          fig.className = "pending";
+          var img = document.createElement("img");
+          img.src = URL.createObjectURL(f);
+          img.alt = f.name;
+          var drop = document.createElement("button");
+          drop.type = "button";
+          drop.className = "drop";
+          drop.setAttribute("aria-label", "Don't add this photo");
+          drop.textContent = "\u00d7";
+          drop.addEventListener("click", function () { input.remove(); render(); });
+          fig.appendChild(img);
+          fig.appendChild(drop);
+          preview.appendChild(fig);
+        });
       });
-      if (input.files.length) {
+      if (count) {
         var note = document.createElement("p");
         note.className = "muted small";
-        note.textContent = input.files.length + " photo(s) will be added when you save.";
-        box.appendChild(note);
+        note.textContent = count + (count === 1 ? " photo" : " photos") + " will be added when you save.";
+        preview.appendChild(note);
       }
+    }
+
+    picker.addEventListener("change", function (e) {
+      var input = e.target;
+      if (input.type !== "file" || !input.files.length) return;
+      var fresh = input.cloneNode();
+      fresh.value = "";
+      input.parentNode.insertBefore(fresh, input);
+      input.removeAttribute("id");
+      store.appendChild(input);
+      render();
     });
   });
 
