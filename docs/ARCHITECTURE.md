@@ -1,6 +1,6 @@
 # Equipment Damage Tracker: Architecture
 
-**Status:** Draft v5 for review. No code yet.
+**Status:** Draft v6 for review. No code yet.
 **Last updated:** 2026-11-18
 
 ## 1. Purpose
@@ -54,7 +54,7 @@ Confirmed by Leon on 2026-11-18:
 - Access is over the local network only.
 - Severity has three levels: **Low**, **Medium**, **High**.
 - On a PC, where there's no long press, a right-click or a small history icon next to the field opens the same history popup.
-- There are two kinds of user: normal users and an admin.
+- Permissions are configurable per role by an admin, and any user can be given admin rights (see section 4).
 - No backups are needed for now (see 7.5).
 - Tech stack: Option A (Django).
 
@@ -62,17 +62,71 @@ Still to confirm:
 
 | # | Assumption |
 |---|------------|
-| A5 | Item types are a list managed in the program (e.g. "Step ladder 3m", "Drill 18V"). Any user can pick one when creating an item; only the admin adds or renames types. (See Q1.) |
+| A5 | Item types are a list managed in the program (e.g. "Step ladder 3m", "Drill 18V"). By default only roles with `manage_item_types` can add or rename them, which an admin can change. |
 | A6 | The Windows machine is on during working hours. |
 
-## 4. Users and roles
+## 4. Users, roles and permissions
 
-| Role | Can do |
-|------|--------|
-| **User** | Look up and create items, create, edit, resolve and reopen tickets, upload photos, view history. |
-| **Admin** | Everything a User can, plus manage user accounts, start and close yearly checks, manage item types, fix item details (e.g. a wrong barcode), and export data. |
+Permissions are not hard-coded to roles. Each **permission** is a single switch, each **role** is a named set of switches, and each user has one role. An admin can change which switches a role has, create new roles, and move any user to a different role, all from the **Roles** and **Users** screens. That means a normal user can be given admin rights at any time, either by moving them to the Admin role or by switching on individual permissions for their role.
 
-Accounts are created by the Admin (no self sign-up). Passwords are stored hashed, never in plain text. The Admin can reset a password.
+### Permissions
+
+| Permission | Allows |
+|------------|--------|
+| `view` | Search, view items, tickets, photos and field history. |
+| `create_item` | Create new items. |
+| `edit_item` | Change an item's type, barcode or serial number. |
+| `create_ticket` | Start new tickets. |
+| `edit_ticket` | Change ticket fields and add photos. |
+| `resolve_ticket` | Set a ticket to Resolved. |
+| `reopen_ticket` | Reopen a resolved ticket. |
+| `remove_photo` | Hide a photo from a ticket (it is kept and the removal is logged). |
+| `manage_item_types` | Add, rename and deactivate item types. |
+| `manage_checks` | Start and close yearly checks. |
+| `export` | Export lists to CSV and print ticket sheets. |
+| `manage_users` | Create and deactivate users, reset passwords, change a user's role. |
+| `manage_roles` | Create roles and change which permissions each role has. |
+
+### Default roles
+
+These are set up on first install and can be changed afterwards.
+
+| Role | Permissions |
+|------|-------------|
+| **User** | `view`, `create_item`, `create_ticket`, `edit_ticket`, `resolve_ticket`, `reopen_ticket` |
+| **Admin** | All permissions |
+
+### Roles screen (admin)
+
+```
+┌───────────── Roles ─────────────┐
+│ Role: [ User            ▼ ]     │
+│                                 │
+│ [x] View                        │
+│ [x] Create item                 │
+│ [ ] Edit item                   │
+│ [x] Create ticket               │
+│ [x] Edit ticket                 │
+│ [x] Resolve ticket              │
+│ [x] Reopen ticket               │
+│ [ ] Remove photo                │
+│ [ ] Manage item types           │
+│ [ ] Manage checks               │
+│ [ ] Export                      │
+│ [ ] Manage users                │
+│ [ ] Manage roles                │
+│                                 │
+│ [ Save ]     [ + New role ]     │
+└─────────────────────────────────┘
+```
+
+### Rules
+
+- Every request is checked on the server against the user's role, so hiding a button is never the only protection.
+- A change to a role takes effect for its users on their next page load.
+- The program refuses any change that would leave **no active user with `manage_roles` and `manage_users`**, so nobody can lock everyone out.
+- Every change to a role's permissions or a user's role is recorded (who, what, when) in a **PermissionChange** history, viewable by admins.
+- Accounts are created by someone with `manage_users` (no self sign-up). Passwords are stored hashed, never in plain text, and can be reset by an admin.
 
 ## 5. Screens and workflows
 
@@ -183,9 +237,9 @@ Long-pressing (about half a second) on any field's label or box opens a popup li
 - On a PC the same popup opens by right-click or a small clock icon beside the field.
 - Times are shown in UK local time.
 
-### 5.6 Yearly checks (Admin)
+### 5.6 Yearly checks
 
-The Admin starts a **Check** (e.g. "Annual check 2026") when the yearly inspection begins and closes it when done. Every ticket created while a check is open is tagged with it automatically; the user never has to pick it. This allows "all faults found in the 2026 check" reports and year-on-year comparison.
+Someone with `manage_checks` starts a **Check** (e.g. "Annual check 2026") when the yearly inspection begins and closes it when done. Every ticket created while a check is open is tagged with it automatically; the user never has to pick it. This allows "all faults found in the 2026 check" reports and year-on-year comparison.
 
 ### 5.7 Lists and export
 
@@ -204,11 +258,17 @@ Check 1──* Ticket  (optional)
 Ticket 1──* Photo
 Ticket 1──* FieldChange
 User 1──* FieldChange
+Role 1──* User
+Role *──* Permission
 ```
 
 | Entity | Key fields |
 |--------|-----------|
-| **User** | id, username, display_name, password_hash, is_admin, active, created_at |
+| **Role** | id, name (unique), description |
+| **Permission** | id, code (e.g. `reopen_ticket`), description |
+| **RolePermission** | role_id, permission_id |
+| **User** | id, username, display_name, password_hash, role_id, active, created_at |
+| **PermissionChange** | id, changed_by, target (role or user), change (e.g. "added reopen_ticket to User"), changed_at |
 | **ItemType** | id, name (unique), description, active |
 | **Item** | id, item_type_id, barcode (unique, required), serial_number (unique, required), notes, created_by, created_at, active |
 | **Check** | id, name, started_on, closed_on |
@@ -279,7 +339,7 @@ Because everything is in two places (the database file and the photos folder), a
 
 ### Option A: Python + Django (chosen)
 
-- **Framework:** Django. Includes username/password login, password hashing, sessions, permissions and an admin site for users, item types and checks.
+- **Framework:** Django. Includes username/password login, password hashing, sessions and a built-in groups-and-permissions system that maps directly onto the roles in section 4 (a role is a Django group). The Roles screen is a simple custom page on top of it.
 - **Pages:** Django templates, a small CSS framework (e.g. Bootstrap or Pico.css), and HTMX for the history popup and photo uploads without full page reloads.
 - **Long press:** a few lines of plain JavaScript (pointer events with a ~500 ms timer, plus right-click and a history icon for PCs).
 - **Barcode scanning:** the browser's BarcodeDetector API where available (Chrome/Edge on Android), with a JavaScript library such as ZXing as a fallback for iPhones.
@@ -304,7 +364,7 @@ Not recommended: you'd prefer local logins, and per-field history with a long-pr
 ## 9. Security
 
 - Passwords stored with a strong hash. Minimum length enforced. Lock out after repeated failed logins.
-- Every page and photo requires login; admin pages require the admin role.
+- Every page and photo requires login; each action requires the matching permission (section 4).
 - Framework defaults protect against CSRF, XSS and SQL injection.
 - Uploads limited to image types and a maximum size.
 - **HTTPS:** plain HTTP on the local network is simplest, but passwords then cross the Wi-Fi unencrypted. Note that some phone browsers only allow live camera access for barcode scanning over HTTPS. Recommended: an internal certificate or a reverse proxy such as Caddy. See Q5.
@@ -323,14 +383,13 @@ Not recommended: you'd prefer local logins, and per-field history with a long-pr
 
 ## 11. Delivery plan (suggested)
 
-1. **MVP:** login, lookup by barcode/serial/ticket number (typed), create item, ticket screen with all six fields, item types, photo upload and display, resolve/reopen, field change history with long-press popup, open-tickets list. Install as a Windows service.
+1. **MVP:** login, configurable roles and permissions, lookup by barcode/serial/ticket number (typed), create item, ticket screen with all six fields, item types, photo upload and display, resolve/reopen, field change history with long-press popup, open-tickets list. Install as a Windows service.
 2. **Phase 2:** camera barcode scanning, yearly checks and check summary, CSV export, printable ticket sheet, HTTPS.
 3. **Later (optional):** nightly backups, import items from the stock system's barcode export, move to a server.
 
 ## 12. Open questions for Leon
 
-1. **Item types:** Can any user add a new item type while creating an item, or only the admin?
-2. **Barcode scanning:** Will people type barcodes, use the phone camera, or use a handheld USB/Bluetooth scanner? (A handheld scanner just "types" into the search box, so it works with no extra effort.)
-3. **HTTPS:** Is plain HTTP acceptable on your internal network, given that phone camera scanning may need HTTPS?
-4. **Who can reopen and edit?** Can any user reopen a resolved ticket and edit its text, or only the admin?
-5. **The Windows machine:** Desktop PC or server? On all day? Who handles Windows updates?
+1. **Barcode scanning:** Will people type barcodes, use the phone camera, or use a handheld USB/Bluetooth scanner? (A handheld scanner just "types" into the search box, so it works with no extra effort.)
+2. **HTTPS:** Is plain HTTP acceptable on your internal network, given that phone camera scanning may need HTTPS?
+3. **Default permissions:** Are the default User and Admin roles in section 4 a sensible starting point? (They can be changed in the program at any time.)
+4. **The Windows machine:** Desktop PC or server? On all day? Who handles Windows updates?
