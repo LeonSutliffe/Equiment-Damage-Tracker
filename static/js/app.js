@@ -126,6 +126,8 @@
   // Prevent double submits (e.g. a slow photo upload tapped twice).
   document.addEventListener("submit", function (e) {
     var form = e.target;
+    // Only POST forms: GET forms (e.g. report downloads) stay on the page and can be re-used.
+    if ((form.getAttribute("method") || "get").toLowerCase() !== "post") return;
     if (form.dataset.submitting) { e.preventDefault(); return; }
     form.dataset.submitting = "1";
     form.querySelectorAll("button[type=submit]").forEach(function (b) { b.setAttribute("aria-busy", "true"); });

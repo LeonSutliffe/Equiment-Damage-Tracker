@@ -145,3 +145,17 @@ ol.history .value { margin-top: 3px; white-space: normal; word-break: break-word
   .topbar, .btn, .history-btn, .add-photo { display: none !important; }
   body { background: #fff; }
 }
+
+/* Reports */
+.date-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.date-row .field { flex: 1 1 160px; }
+fieldset.chip-group { border: 0; padding: 0; margin: 0 0 14px; }
+fieldset.chip-group legend { font-weight: 600; margin-bottom: 6px; padding: 0; }
+.chip-check { display: inline-flex; align-items: center; margin: 0 6px 6px 0; cursor: pointer; }
+.chip-check input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.chip-check span { display: inline-block; padding: 8px 14px; border: 1px solid var(--line); border-radius: 99px; background: #fff; }
+.chip-check input:checked + span { background: var(--primary); border-color: var(--primary); color: #fff; }
+.chip-check input:focus-visible + span { outline: 3px solid #b6cdf2; }
+.report-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.report-actions .btn { flex: 1 1 180px; }
+input[type=date] { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font: inherit; background: #fff; }

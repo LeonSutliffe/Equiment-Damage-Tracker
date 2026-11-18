@@ -16,6 +16,7 @@ urlpatterns = [
     path("photos/<int:pk>/", views.photo_view, name="photo_view"),
     path("photos/<int:pk>/thumb/", views.photo_thumb, name="photo_thumb"),
     path("photos/<int:pk>/remove/", views.photo_remove, name="photo_remove"),
+    path("reports/", views.reports, name="reports"),
     path("item-types/", views.item_type_list, name="item_type_list"),
     path("item-types/new/", views.item_type_edit, name="item_type_create"),
     path("item-types/<int:pk>/", views.item_type_edit, name="item_type_edit"),

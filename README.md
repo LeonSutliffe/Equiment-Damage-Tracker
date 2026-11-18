@@ -16,8 +16,9 @@ The design is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). This is the **fir
 - **Two people editing at once**: the second save is refused, the latest version is shown, and what they typed is shown so it isn't lost.
 - **Open tickets list**: Safety faults and High severity first, then oldest first. Filter by fault type, severity and item type.
 - **Item types** screen.
+- **Reports** (needs the `export` permission, which Admin has): filter tickets by creation date range, item type, status, fault type, severity and text, then view on screen or download as an Excel spreadsheet or a PDF, optionally with photos.
 
-Not yet built (section 11, phase 2): yearly checks, CSV export and printable ticket sheets. The `manage_checks` and `export` permissions already exist so roles don't need changing later.
+Not yet built: yearly checks. The `manage_checks` permission already exists so roles don't need changing later.
 
 ## Installing on the Windows PC
 

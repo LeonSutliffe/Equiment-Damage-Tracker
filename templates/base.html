@@ -16,6 +16,7 @@
     <a href="{% url 'open_tickets' %}">Open tickets</a>
     <a href="{% url 'item_list' %}">Items</a>
     <a href="{% url 'item_type_list' %}">Item types</a>
+    {% if perms_ok.export %}<a href="{% url 'reports' %}">Reports</a>{% endif %}
     {% if perms_ok.manage_users %}<a href="{% url 'user_list' %}">Users</a>{% endif %}
     {% if perms_ok.manage_roles %}<a href="{% url 'role_list' %}">Roles</a>{% endif %}
   </nav>

@@ -4,6 +4,7 @@ from django.core.paginator import Paginator
 from django.db.models import Case, Count, IntegerField, Q, Value, When
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.utils.http import urlencode
 from django.views.decorators.http import require_POST
 
@@ -275,3 +276,41 @@ def item_type_edit(request, pk=None):
         return redirect("item_type_list")
     title = f"Edit {item_type}" if item_type else "New item type"
     return render(request, "tracker/item_type_form.html", {"form": form, "title": title})
+
+
+# ---------------------------------------------------------------- reports
+
+
+@require_perm("export")
+def reports(request):
+    from django.http import HttpResponse
+
+    from .reports import ReportForm, build_pdf, build_xlsx, describe_filters, filter_tickets
+
+    submitted = "action" in request.GET
+    form = ReportForm(request.GET if submitted else None)
+    ctx = {"form": form, "submitted": submitted}
+    if submitted and form.is_valid():
+        data = form.cleaned_data
+        tickets = filter_tickets(data)
+        action = request.GET.get("action")
+        stamp = timezone.localtime().strftime("%Y-%m-%d_%H%M")
+        if action == "xlsx":
+            response = HttpResponse(
+                build_xlsx(tickets, data),
+                content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            response["Content-Disposition"] = f'attachment; filename="tickets_{stamp}.xlsx"'
+            return response
+        if action == "pdf":
+            response = HttpResponse(build_pdf(tickets, data), content_type="application/pdf")
+            response["Content-Disposition"] = f'attachment; filename="tickets_{stamp}.pdf"'
+            return response
+        ctx.update({
+            "results": True,
+            "count": tickets.count(),
+            "tickets": tickets[:200],
+            "filters": describe_filters(data),
+            "query": request.GET.urlencode(),
+        })
+    return render(request, "tracker/reports.html", ctx)
