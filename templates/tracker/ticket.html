@@ -3,7 +3,7 @@
 {% block content %}
 <div class="ticket-head">
   <h1>{% if ticket %}{{ ticket.code }}{% else %}New ticket{% endif %}</h1>
-  <a href="{% url 'item_detail' item.pk %}">{{ item.item_type }} ({{ item.serial_number }})</a>
+  <a href="{% url 'item_detail' item.pk %}">{{ item.item_type }} ({{ item.barcode }})</a>
   {% if ticket %}<span class="badge {{ ticket.status }}">{{ ticket.get_status_display }}</span>{% endif %}
 </div>
 
