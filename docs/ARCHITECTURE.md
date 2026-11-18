@@ -1,6 +1,6 @@
 # Equipment Damage Tracker: Architecture
 
-**Status:** Draft v4 for review. No code yet.
+**Status:** Draft v5 for review. No code yet.
 **Last updated:** 2026-11-18
 
 ## 1. Purpose
@@ -46,16 +46,24 @@ From Leon, 2026-11-18:
 
 ## 3. Assumptions still to confirm
 
-Confirmed by Leon: an item is one physical unit with many tickets over time, ticket numbers like `T-00042`, Resolved is final but reopenable, and access is local network only.
+Confirmed by Leon on 2026-11-18:
+
+- An item is one physical unit with many tickets over time. **An item can have several open tickets at once, with no warning.**
+- Ticket numbers look like `T-00042`.
+- Resolved is the final status, but any resolved ticket can be reopened.
+- Access is over the local network only.
+- Severity has three levels: **Low**, **Medium**, **High**.
+- On a PC, where there's no long press, a right-click or a small history icon next to the field opens the same history popup.
+- There are two kinds of user: normal users and an admin.
+- No backups are needed for now (see 7.5).
+- Tech stack: Option A (Django).
+
+Still to confirm:
 
 | # | Assumption |
 |---|------------|
-| A1 | Only one ticket per item is normally open at a time; starting a second one shows a warning. (See Q1.) |
-| A2 | Severity has three levels: **Low**, **Medium**, **High**. (See Q2.) |
-| A3 | On a PC, where there's no long press, a right-click or a small history icon next to the field opens the same popup. |
-| A4 | Two kinds of user: normal users and an admin. |
-| A5 | Item types are a list managed in the program (e.g. "Step ladder 3m", "Drill 18V"). Any user can pick one when creating an item; only the admin adds or renames types. (See Q3.) |
-| A6 | The Windows machine is on during working hours and is backed up. |
+| A5 | Item types are a list managed in the program (e.g. "Step ladder 3m", "Drill 18V"). Any user can pick one when creating an item; only the admin adds or renames types. (See Q1.) |
+| A6 | The Windows machine is on during working hours. |
 
 ## 4. Users and roles
 
@@ -106,7 +114,7 @@ Shows the item's type, barcode and serial number, and its tickets newest first.
 └───────────────────────────────────────┘
 ```
 
-From here the user can open any existing ticket to edit, resolve or reopen it, or start a new one. If the item already has an open ticket, the app shows it first and asks "Start another ticket anyway?" to avoid duplicates.
+From here the user can open any existing ticket to edit, resolve or reopen it, or start a new one. An item can have any number of open tickets at once.
 
 ### 5.3 Create item
 
@@ -148,7 +156,7 @@ The ticket number, item type and serial number sit at the top, then the fields:
 
 - **Status:** Open, In Progress, Resolved. A new ticket starts as Open.
 - **Fault Type:** Cosmetic, Functionality or Safety. Required.
-- **Severity:** Low, Medium or High (A2). Required.
+- **Severity:** Low, Medium or High. Required.
 - **Fault Description:** multi-line text.
 - **Photos:** shows every photo uploaded to the ticket as thumbnails. Tap to view full size. **Add photo** opens the phone camera or the file picker. Photos are never silently deleted; removing one hides it and is logged.
 - **Work Done:** multi-line text describing the repair or action taken.
@@ -172,7 +180,7 @@ Long-pressing (about half a second) on any field's label or box opens a popup li
 - **Status:** each change shows old → new value, user, date and time. This doubles as the record of who resolved or reopened the ticket.
 - **Text fields:** each entry shows the user, date and time and the text as saved at that point.
 - **Photos:** each entry shows who added or removed which photo, and when.
-- On a PC the same popup opens by right-click or a small clock icon beside the field (A3).
+- On a PC the same popup opens by right-click or a small clock icon beside the field.
 - Times are shown in UK local time.
 
 ### 5.6 Yearly checks (Admin)
@@ -240,9 +248,6 @@ Everything runs on the one Windows machine.
 │  │ Database file      │  │ Photos folder  │  │
 │  │ (SQLite)           │  │ on local disk  │  │
 │  └────────────────────┘  └────────────────┘  │
-│                                             │
-│  Nightly backup ──► network share / USB /   │
-│                     OneDrive folder          │
 └─────────────────────────────────────────────┘
 ```
 
@@ -266,11 +271,13 @@ Uploaded photos are resized (longest edge about 2000 px) and saved in a folder o
 
 ### 7.5 Backups
 
-A scheduled task copies the database file and photos folder every night to a second place (network share, external drive, or OneDrive-synced folder), keeping about 30 days of copies. Restore is "stop service, copy files back, start service".
+Not needed for now, at Leon's request. Note the risk: all data lives on one machine, so a disk failure, theft or accidental deletion would lose every ticket and photo.
+
+Because everything is in two places (the database file and the photos folder), adding backups later is simple: a Windows scheduled task copies both to a network share, external drive or OneDrive-synced folder each night. No design change is needed.
 
 ## 8. Tech stack
 
-### Option A: Python + Django (recommended)
+### Option A: Python + Django (chosen)
 
 - **Framework:** Django. Includes username/password login, password hashing, sessions, permissions and an admin site for users, item types and checks.
 - **Pages:** Django templates, a small CSS framework (e.g. Bootstrap or Pico.css), and HTMX for the history popup and photo uploads without full page reloads.
@@ -290,9 +297,9 @@ Express or Fastify with server-rendered pages or a small React front end, SQLite
 
 Not recommended: you'd prefer local logins, and per-field history with a long-press popup is awkward to build in Power Apps.
 
-### Recommendation
+### Decision
 
-**Option A: Django + SQLite + Waitress as a Windows service, with nightly backups.**
+**Option A: Django + SQLite + Waitress as a Windows service.** Confirmed by Leon on 2026-11-18.
 
 ## 9. Security
 
@@ -316,17 +323,14 @@ Not recommended: you'd prefer local logins, and per-field history with a long-pr
 
 ## 11. Delivery plan (suggested)
 
-1. **MVP:** login, lookup by barcode/serial/ticket number (typed), create item, ticket screen with all six fields, item types, photo upload and display, resolve/reopen, field change history with long-press popup, open-tickets list. Install as a Windows service with nightly backup.
+1. **MVP:** login, lookup by barcode/serial/ticket number (typed), create item, ticket screen with all six fields, item types, photo upload and display, resolve/reopen, field change history with long-press popup, open-tickets list. Install as a Windows service.
 2. **Phase 2:** camera barcode scanning, yearly checks and check summary, CSV export, printable ticket sheet, HTTPS.
-3. **Later (optional):** import items from the stock system's barcode export, move to a server.
+3. **Later (optional):** nightly backups, import items from the stock system's barcode export, move to a server.
 
 ## 12. Open questions for Leon
 
-1. **One open ticket per item?** Should the app block a second open ticket on the same item, warn (current design), or allow it freely?
-2. **Severity levels:** Are Low / Medium / High right, or do you use other levels (e.g. 1 to 5, or a "Do not use" level)?
-3. **Item types:** Can any user add a new item type while creating an item, or only the admin?
-4. **Barcode scanning:** Will people type barcodes, use the phone camera, or use a handheld USB/Bluetooth scanner? (A handheld scanner just "types" into the search box, so it works with no extra effort.)
-5. **HTTPS:** Is plain HTTP acceptable on your internal network, given that phone camera scanning may need HTTPS?
-6. **Who can reopen and edit?** Can any user reopen a resolved ticket and edit its text, or only the admin?
-7. **Backups:** Where should nightly backups go?
-8. **The Windows machine:** Desktop PC or server? On all day? Who handles Windows updates?
+1. **Item types:** Can any user add a new item type while creating an item, or only the admin?
+2. **Barcode scanning:** Will people type barcodes, use the phone camera, or use a handheld USB/Bluetooth scanner? (A handheld scanner just "types" into the search box, so it works with no extra effort.)
+3. **HTTPS:** Is plain HTTP acceptable on your internal network, given that phone camera scanning may need HTTPS?
+4. **Who can reopen and edit?** Can any user reopen a resolved ticket and edit its text, or only the admin?
+5. **The Windows machine:** Desktop PC or server? On all day? Who handles Windows updates?
