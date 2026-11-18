@@ -4,7 +4,6 @@ Matches the common 65-up layout (e.g. Avery L7651 and compatibles). Print at 100
 "Actual size" so the labels line up.
 """
 
-from django.conf import settings
 
 from .models import Ticket
 

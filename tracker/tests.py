@@ -355,3 +355,18 @@ class LabelTests(TestCase):
 
         count = lambda b: len(re.findall(rb"/Type /Page\b(?!s)", b))  # noqa: E731
         self.assertEqual((count(one), count(two), count(filled), count(offset)), (1, 2, 1, 2))
+
+
+class HealthTests(TestCase):
+    def test_health_ok_without_login(self):
+        r = self.client.get("/health/", secure=False)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.content, b"ok")
+
+    def test_health_reports_database_error(self):
+        from unittest import mock
+
+        with mock.patch("django.db.backends.utils.CursorWrapper.execute", side_effect=Exception("unable to open database file")):
+            r = self.client.get("/health/")
+        self.assertEqual(r.status_code, 503)
+        self.assertIn(b"unable to open", r.content)

@@ -63,16 +63,7 @@ try {
 
     Step "Starting the web app"
     & $nssm start DamageTrackerWeb | Out-Null
-    $ok = $false
-    for ($i = 0; $i -lt 20 -and -not $ok; $i++) {
-        Start-Sleep -Seconds 1
-        try {
-            $r = Invoke-WebRequest "http://127.0.0.1:8000/login/" -UseBasicParsing -MaximumRedirection 0 -ErrorAction Stop
-            $ok = $r.StatusCode -eq 200
-        } catch {
-            if ($_.Exception.Response -and [int]$_.Exception.Response.StatusCode -in 301, 302) { $ok = $true }
-        }
-    }
+    $ok = Test-AppHealth
     if (-not $ok) { throw "The app didn't answer after the move." }
 } catch {
     Write-Warning $_
@@ -87,6 +78,14 @@ try {
 
 Step "Locking the new folder"
 Protect-DataFolder $NewDataDir
+& $nssm restart DamageTrackerWeb | Out-Null
+if (-not (Test-AppHealth)) {
+    Write-Warning "After locking, the app can't open its database. Undoing the lock on $NewDataDir."
+    & icacls $NewDataDir /reset /T /C /Q | Out-Null
+    & $nssm restart DamageTrackerWeb | Out-Null
+    if (Test-AppHealth) { Write-Warning "The app works again, but the folder is NOT protected. Please tell Claude." }
+    exit 1
+}
 
 Step "Retiring the old folder"
 $stamp = Get-Date -Format "yyyyMMdd-HHmm"
