@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Users{% endblock %}
+{% block content %}
+<div class="head-row"><h1>Users</h1><a class="btn primary" href="{% url 'user_create' %}">+ New user</a></div>
+<table class="list">
+  <thead><tr><th>Username</th><th>Name</th><th>Role</th><th>Status</th><th></th></tr></thead>
+  <tbody>
+  {% for u in users %}
+    <tr class="{% if not u.is_active %}muted{% endif %}">
+      <td>{{ u.username }}</td><td>{{ u.display_name }}</td><td>{{ u.role|default:"(none)" }}</td>
+      <td>{% if not u.is_active %}Deactivated{% elif u.is_locked %}Locked{% else %}Active{% endif %}</td>
+      <td class="actions"><a href="{% url 'user_edit' u.pk %}">Edit</a> · <a href="{% url 'user_password' u.pk %}">Reset password</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

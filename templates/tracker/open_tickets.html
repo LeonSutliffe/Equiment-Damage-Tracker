@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Open tickets{% endblock %}
+{% block content %}
+<h1>Open tickets ({{ page.paginator.count }})</h1>
+<form method="get" class="filters">
+  <select name="fault_type"><option value="">All fault types</option>{% for v, l in fault_types %}<option value="{{ v }}"{% if filters.fault_type == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  <select name="severity"><option value="">All severities</option>{% for v, l in severities %}<option value="{{ v }}"{% if filters.severity == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  <select name="item_type"><option value="">All item types</option>{% for t in item_types %}<option value="{{ t.pk }}"{% if filters.item_type == t.pk|stringformat:"s" %} selected{% endif %}>{{ t.name }}</option>{% endfor %}</select>
+  <button class="btn">Filter</button>
+</form>
+<ul class="pick-list">
+  {% for t in page %}
+    <li><a href="{% url 'ticket_detail' t.number %}">
+      <strong>{{ t.code }} · {{ t.item.item_type }} ({{ t.item.serial_number }})</strong>
+      <span><span class="badge {{ t.status }}">{{ t.get_status_display }}</span>
+        <span class="badge ft-{{ t.fault_type }}">{{ t.get_fault_type_display }}</span>
+        <span class="badge sev-{{ t.severity }}">{{ t.get_severity_display }}</span>
+        opened {{ t.created_at|date:"j M Y" }}</span>
+      {% if t.fault_description %}<span class="muted">{{ t.fault_description|truncatechars:90 }}</span>{% endif %}
+    </a></li>
+  {% empty %}<li class="muted">No open tickets.</li>{% endfor %}
+</ul>
+{% include "_pager.html" with extra=filter_query %}
+{% endblock %}

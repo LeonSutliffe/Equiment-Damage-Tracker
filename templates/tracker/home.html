@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Search{% endblock %}
+{% block content %}
+<form method="get" action="{% url 'home' %}" class="search card">
+  <label for="q">Barcode, serial or ticket number</label>
+  <div class="search-row">
+    <input id="q" name="q" value="{{ query }}" autofocus autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="text" enterkeyhint="search">
+    <button type="submit" class="btn primary">Search</button>
+  </div>
+  <p class="links"><a href="{% url 'open_tickets' %}">Open tickets ({{ open_count }})</a> · <a href="{% url 'item_list' %}">All items</a></p>
+</form>
+
+{% if result %}
+  {% if result.items %}
+    <h2>{{ result.items|length }} match{{ result.items|length|pluralize:"es" }} for “{{ result.query }}”</h2>
+    <ul class="pick-list">
+      {% for item in result.items %}
+        <li><a href="{% url 'item_detail' item.pk %}"><strong>{{ item.item_type }}</strong><span>Barcode {{ item.barcode }} · Serial {{ item.serial_number }}</span></a></li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <div class="card empty">
+      <h2>Nothing found for “{{ result.query }}”</h2>
+      {% if perms_ok.create_item %}
+        <p>Create a new item with this value as its:</p>
+        <p>
+          <a class="btn primary" href="{% url 'item_create' %}?barcode={{ result.query|urlencode }}">Barcode</a>
+          <a class="btn primary" href="{% url 'item_create' %}?serial_number={{ result.query|urlencode }}">Serial number</a>
+        </p>
+      {% else %}
+        <p>Your role can't create items. Ask an admin.</p>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endif %}
+{% endblock %}
