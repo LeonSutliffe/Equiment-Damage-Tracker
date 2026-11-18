@@ -1,6 +1,6 @@
 # Equipment Damage Tracker: Architecture
 
-**Status:** Draft v7. All open questions answered. for review. No code yet.
+**Status:** v7. All open questions answered. The MVP (section 11, step 1) is built; see README.md.
 **Last updated:** 2026-11-18
 
 ## 1. Purpose

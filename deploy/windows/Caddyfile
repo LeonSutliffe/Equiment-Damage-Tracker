@@ -1,0 +1,33 @@
+# Caddy config for the Equipment Damage Tracker (architecture 7.5).
+# Replace faults.local with the name staff will type. Add more names separated by commas,
+# e.g.  faults.local, DESKTOP-ABC123 {
+{
+	# Don't try to add the certificate to Windows by itself; install.ps1 does that.
+	skip_install_trust
+
+	# Keep Caddy's certificates and its internal certificate authority in this folder,
+	# so moving the program to another PC keeps the same certificate (architecture 7.6).
+	storage file_system {
+		root C:/DamageTracker/caddy/data
+	}
+}
+
+faults.local {
+	tls internal
+
+	# Photos from phones can be large.
+	request_body {
+		max_size 200MB
+	}
+
+	reverse_proxy 127.0.0.1:8000
+
+	log {
+		output file C:/DamageTracker/logs/caddy-access.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}
+
+# Anyone who types http:// gets sent to https:// automatically.

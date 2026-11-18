@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Items{% endblock %}
+{% block content %}
+<div class="head-row"><h1>Items</h1>{% if perms_ok.create_item %}<a class="btn primary" href="{% url 'item_create' %}">+ New item</a>{% endif %}</div>
+<form method="get" class="filters">
+  <select name="type" onchange="this.form.submit()">
+    <option value="">All item types</option>
+    {% for t in item_types %}<option value="{{ t.pk }}"{% if type_id == t.pk|stringformat:"s" %} selected{% endif %}>{{ t.name }}</option>{% endfor %}
+  </select>
+  <noscript><button class="btn">Filter</button></noscript>
+</form>
+<table class="list">
+  <thead><tr><th>Item type</th><th>Barcode</th><th>Serial</th><th>Open</th><th>Tickets</th></tr></thead>
+  <tbody>
+  {% for item in page %}
+    <tr class="row-link" data-href="{% url 'item_detail' item.pk %}">
+      <td><a href="{% url 'item_detail' item.pk %}">{{ item.item_type }}</a></td><td>{{ item.barcode }}</td><td>{{ item.serial_number }}</td>
+      <td>{% if item.open_tickets %}<span class="badge open">{{ item.open_tickets }}</span>{% endif %}</td><td>{{ item.all_tickets }}</td>
+    </tr>
+  {% empty %}<tr><td colspan="5">No items yet.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% include "_pager.html" with extra="type="|add:type_id %}
+{% endblock %}

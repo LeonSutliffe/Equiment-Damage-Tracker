@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}{% if ticket %}{{ ticket.code }}{% else %}New ticket{% endif %}{% endblock %}
+{% block content %}
+<div class="ticket-head">
+  <h1>{% if ticket %}{{ ticket.code }}{% else %}New ticket{% endif %}</h1>
+  <a href="{% url 'item_detail' item.pk %}">{{ item.item_type }} ({{ item.serial_number }})</a>
+  {% if ticket %}<span class="badge {{ ticket.status }}">{{ ticket.get_status_display }}</span>{% endif %}
+</div>
+
+{% if conflict %}
+<div class="flash flash-warning">
+  <strong>Someone else saved this ticket while you were editing it.</strong>
+  Your changes were <em>not</em> saved. The latest version is shown below; re-enter anything still needed.
+  <details open><summary>What you tried to save</summary>
+    <dl>{% for label, value in conflict.items %}<dt>{{ label }}</dt><dd>{{ value|linebreaksbr }}</dd>{% endfor %}</dl>
+  </details>
+</div>
+{% endif %}
+
+<form method="post" enctype="multipart/form-data" class="card ticket-form">{% csrf_token %}
+  {% if form.non_field_errors %}<div class="errors">{{ form.non_field_errors }}</div>{% endif %}
+  {% if form.version %}{{ form.version }}{% endif %}
+  {% if form.status %}{% include "tracker/_ticket_field.html" with field=form.status name="status" %}{% endif %}
+  {% include "tracker/_ticket_field.html" with field=form.fault_type name="fault_type" %}
+  {% include "tracker/_ticket_field.html" with field=form.severity name="severity" %}
+  {% include "tracker/_ticket_field.html" with field=form.fault_description name="fault_description" %}
+
+  <div class="field{% if form.photos.errors %} has-error{% endif %}"{% if ticket %} data-history="{% url 'ticket_history' ticket.number 'photos' %}"{% endif %}>
+    <div class="label-row">
+      <label>Photos</label>
+      {% if ticket %}<button type="button" class="history-btn" data-history-open aria-label="Show Photos history" title="Show history">&#128339;</button>{% endif %}
+    </div>
+    <div class="photos">
+      {% for p in photos %}
+        <figure class="photo">
+          <a href="{% url 'photo_view' p.pk %}" target="_blank" rel="noopener"><img src="{% url 'photo_thumb' p.pk %}" alt="{{ p.label }}" loading="lazy"></a>
+          {% if perms_ok.remove_photo %}
+            <button type="submit" class="link danger small" form="remove-{{ p.pk }}" data-confirm="Remove this photo from the ticket? It is kept and the removal is logged.">Remove</button>
+          {% endif %}
+        </figure>
+      {% empty %}{% if ticket %}<p class="muted">No photos yet.</p>{% endif %}{% endfor %}
+    </div>
+    {% if can_edit %}
+      <label class="btn add-photo">+ Add photo {{ form.photos }}</label>
+      <div class="photo-preview" data-preview-for="{{ form.photos.id_for_label }}"></div>
+    {% endif %}
+    {% for e in form.photos.errors %}<div class="error">{{ e }}</div>{% endfor %}
+  </div>
+
+  {% include "tracker/_ticket_field.html" with field=form.work_done name="work_done" %}
+
+  {% if can_edit %}<button type="submit" class="btn primary wide">{% if ticket %}Save{% else %}Create ticket{% endif %}</button>{% endif %}
+  {% if ticket %}<p class="muted small">Press and hold (or right-click) a field, or tap &#128339;, to see who changed it and when. Opened {{ ticket.created_at|date:"j M Y H:i" }}.</p>{% endif %}
+</form>
+
+{% for p in photos %}{% if perms_ok.remove_photo %}
+<form id="remove-{{ p.pk }}" method="post" action="{% url 'photo_remove' p.pk %}" hidden>{% csrf_token %}</form>
+{% endif %}{% endfor %}
+{% endblock %}

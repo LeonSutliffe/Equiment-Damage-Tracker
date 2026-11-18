@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ item }}{% endblock %}
+{% block content %}
+<div class="card">
+  <h1 data-history="{% url 'item_history' item.pk 'item_type' %}">{{ item.item_type }}</h1>
+  <p class="ids">
+    <span data-history="{% url 'item_history' item.pk 'barcode' %}">Barcode <strong>{{ item.barcode }}</strong></span> ·
+    <span data-history="{% url 'item_history' item.pk 'serial_number' %}">Serial <strong>{{ item.serial_number }}</strong></span>
+  </p>
+  {% if item.notes %}<p data-history="{% url 'item_history' item.pk 'notes' %}">{{ item.notes|linebreaksbr }}</p>{% endif %}
+  <p class="muted small">Press and hold (or right-click) a value to see its history.</p>
+  {% if perms_ok.edit_item %}<a class="btn" href="{% url 'item_edit' item.pk %}">Edit item</a>{% endif %}
+</div>
+
+{% if perms_ok.create_ticket %}<a class="btn primary wide" href="{% url 'ticket_create' item.pk %}">+ Start new ticket</a>{% endif %}
+
+<h2>Tickets</h2>
+<ul class="pick-list">
+  {% for t in tickets %}
+    <li><a href="{% url 'ticket_detail' t.number %}">
+      <strong>{{ t.code }}</strong>
+      <span><span class="badge {{ t.status }}">{{ t.get_status_display }}</span> {{ t.get_fault_type_display }} · {{ t.get_severity_display }} · {{ t.created_at|date:"j M Y" }}</span>
+      {% if t.fault_description %}<span class="muted">{{ t.fault_description|truncatechars:80 }}</span>{% endif %}
+    </a></li>
+  {% empty %}<li class="muted">No tickets for this item yet.</li>{% endfor %}
+</ul>
+{% endblock %}

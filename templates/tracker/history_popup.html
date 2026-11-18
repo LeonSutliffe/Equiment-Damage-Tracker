@@ -1,0 +1,19 @@
+<h2>{{ label }} history</h2>
+{% if entries %}
+<ol class="history">
+  {% for e in entries %}
+  <li>
+    <div class="when">{{ e.when|date:"j M Y H:i" }} <span class="who">{{ e.who }}</span>{% if e.note %} <span class="note">{{ e.note }}</span>{% endif %}</div>
+    {% if field == "photos" %}
+      <div class="value">{% if e.note == "removed" %}{{ e.old }}{% else %}{{ e.new }}{% endif %}</div>
+    {% elif e.old and e.new and field != "fault_description" and field != "work_done" and field != "notes" %}
+      <div class="value">{{ e.old }} → {{ e.new }}</div>
+    {% elif e.new %}
+      <div class="value">“{{ e.new|linebreaksbr }}”</div>
+    {% else %}
+      <div class="value muted">(cleared)</div>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ol>
+{% else %}<p class="muted">No changes recorded.</p>{% endif %}
