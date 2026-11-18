@@ -240,3 +240,36 @@ class ReportTests(TestCase):
         self.assertTrue(r.content.startswith(b"%PDF"))
         r = self.client.get(self.url, {"action": "xlsx", "severities": ["medium"]})
         self.assertEqual(r.status_code, 200)
+
+
+class CopyDataScriptTests(TestCase):
+    """deploy/windows/copy_data.py must copy everything and refuse to overwrite."""
+
+    def test_copy_and_verify(self):
+        import importlib.util
+        import sqlite3
+
+        spec = importlib.util.spec_from_file_location(
+            "copy_data", Path(__file__).resolve().parent.parent / "deploy" / "windows" / "copy_data.py"
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        with tempfile.TemporaryDirectory() as tmp:
+            src, dst = Path(tmp) / "src", Path(tmp) / "dst"
+            (src / "photos").mkdir(parents=True)
+            con = sqlite3.connect(src / "db.sqlite3")
+            con.execute("PRAGMA journal_mode=WAL")
+            con.execute("CREATE TABLE t (x)")
+            con.executemany("INSERT INTO t VALUES (?)", [(i,) for i in range(50)])
+            con.commit()  # left open, so changes sit in the -wal file
+            (src / "secret_key.txt").write_text("k")
+            (src / "photos" / "a.jpg").write_bytes(b"x" * 1000)
+            mod.main(src, dst)
+            con.close()
+            copy = sqlite3.connect(dst / "db.sqlite3")
+            self.assertEqual(copy.execute("SELECT COUNT(*) FROM t").fetchone()[0], 50)
+            copy.close()
+            self.assertEqual((dst / "photos" / "a.jpg").read_bytes(), b"x" * 1000)
+            self.assertTrue((src / "db.sqlite3").exists())  # source untouched
+            with self.assertRaises(SystemExit):
+                mod.main(src, dst)

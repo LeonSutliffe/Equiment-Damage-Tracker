@@ -51,4 +51,4 @@ Run the tests with `python manage.py test`.
 | `templates/`, `static/` | Pages, styles and the long-press script |
 | `serve.py` | Starts the app with Waitress (used by the Windows service) |
 | `deploy/windows/` | Install script, update script and Caddy config |
-| `data/` | Created on first run: database, photos and secret key (not in git) |
+| `data/` | Database, photos and secret key when running locally (not in git). On the Windows PC they live in `C:\ProgramData\DamageTracker\data`, locked against accidental deletion |

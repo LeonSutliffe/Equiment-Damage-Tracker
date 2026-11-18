@@ -10,6 +10,8 @@
 param(
     [string]$HostName = "faults.local",
     [string]$AppDir = "C:\DamageTracker",
+    # Database and photos live outside the program folder, protected from accidental deletion.
+    [string]$DataDir = "C:\ProgramData\DamageTracker\data",
     [string]$Python = "py"
 )
 $ErrorActionPreference = "Stop"
@@ -33,7 +35,7 @@ $caddy = Join-Path $tools "caddy.exe"
 foreach ($exe in @($nssm, $caddy)) {
     if (-not (Test-Path $exe)) { throw "Missing $exe. See README step 2 (download NSSM and Caddy into $tools)." }
 }
-New-Item -ItemType Directory -Force -Path "$AppDir\logs", "$AppDir\data", "$AppDir\caddy\data" | Out-Null
+New-Item -ItemType Directory -Force -Path "$AppDir\logs", "$AppDir\caddy\data" | Out-Null
 
 Step "Creating Python environment"
 if (-not (Test-Path "$AppDir\.venv\Scripts\python.exe")) { & $Python -3 -m venv "$AppDir\.venv" }
@@ -47,10 +49,16 @@ if (-not (Test-Path $envFile)) {
     @(
         "FAULTS_ALLOWED_HOSTS=$($names -join ','),localhost,127.0.0.1",
         "FAULTS_CSRF_TRUSTED_ORIGINS=$(($names | ForEach-Object { "https://$_" }) -join ',')",
-        "FAULTS_DATA_DIR=$AppDir\data"
+        "FAULTS_DATA_DIR=$DataDir"
     ) | Set-Content -Encoding UTF8 $envFile
     Write-Host "Created $envFile"
 } else { Write-Host "Keeping existing $envFile" }
+
+# Use whatever data folder faults.env names (an older install may still use $AppDir\data).
+$dataLine = Get-Content $envFile | Where-Object { $_ -match '^\s*FAULTS_DATA_DIR\s*=' } | Select-Object -Last 1
+$DataDir = if ($dataLine) { ($dataLine -split "=", 2)[1].Trim().Trim('"') } else { "$AppDir\data" }
+New-Item -ItemType Directory -Force -Path $DataDir | Out-Null
+Write-Host "Data folder: $DataDir"
 
 Step "Setting up the database and web files"
 Push-Location $AppDir
@@ -62,6 +70,10 @@ if ("$hasUsers".Trim() -ne "True") {
     & $venvPy manage.py createsuperuser
 }
 Pop-Location
+
+Step "Protecting the data folder from accidental deletion"
+. "$AppDir\deploy\windows\protect-data.ps1"
+Protect-DataFolder $DataDir
 
 Step "Writing Caddy config"
 $caddyFile = Join-Path $AppDir "Caddyfile"
