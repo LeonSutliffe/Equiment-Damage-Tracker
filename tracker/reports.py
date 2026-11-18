@@ -8,7 +8,7 @@ from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 
-from .models import ItemType, Ticket
+from .models import ItemType, Ticket, format_cost
 
 
 class ReportForm(forms.Form):
@@ -107,7 +107,7 @@ def _photos(ticket):
 
 
 COLUMNS = ["Ticket", "Created", "Created by", "Status", "Fault Type", "Severity", "Item type", "Barcode",
-           "Serial number", "Fault Description", "Work Done", "Comments", "Last updated"]
+           "Serial number", "Fault Description", "Work Done", "Repair cost", "Comments", "Last updated"]
 
 
 def ticket_row(t):
@@ -123,6 +123,7 @@ def ticket_row(t):
         "Serial number": t.item.serial_number,
         "Fault Description": t.fault_description,
         "Work Done": t.work_done,
+        "Repair cost": t.repair_cost if t.repair_cost is not None else "",
         "Comments": "\n".join(
             f"{_local(c.created_at)} {c.user.label if c.user else '(deleted user)'}: {c.text}" for c in t.comments.all()
         ),
@@ -153,7 +154,7 @@ def build_xlsx(tickets, data):
         cell.alignment = Alignment(vertical="center")
     widths = {"Ticket": 10, "Created": 17, "Created by": 14, "Status": 12, "Fault Type": 13, "Severity": 9,
               "Item type": 20, "Barcode": 15, "Serial number": 15, "Fault Description": 45, "Work Done": 45,
-              "Comments": 45, "Last updated": 17, "Photos": 8}
+              "Repair cost": 11, "Comments": 45, "Last updated": 17, "Photos": 8}
     for i, h in enumerate(headers, start=1):
         ws.column_dimensions[get_column_letter(i)].width = widths.get(h, 14)
 
@@ -179,6 +180,16 @@ def build_xlsx(tickets, data):
                 ws.add_image(img, f"{get_column_letter(col)}{r}")
     if include_photos:
         ws.cell(row=1, column=photo_col, value="Photo thumbnails").font = Font(bold=True)
+    cost_col = get_column_letter(headers.index("Repair cost") + 1)
+    for r in range(2, len(tickets) + 2):
+        ws[f"{cost_col}{r}"].number_format = "£#,##0.00"
+    if tickets:
+        total_row = len(tickets) + 3  # one blank row, so sorting and filtering leave the total alone
+        ws.cell(row=total_row, column=1, value="Total repair cost").font = Font(bold=True)
+        total = ws[f"{cost_col}{total_row}"]
+        total.value = f"=SUM({cost_col}2:{cost_col}{len(tickets) + 1})"
+        total.number_format = "£#,##0.00"
+        total.font = Font(bold=True)
     ws.freeze_panes = "B2"
     ws.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{max(len(tickets) + 1, 1)}"
 
@@ -187,6 +198,7 @@ def build_xlsx(tickets, data):
     info["A1"].font = Font(bold=True, size=14)
     info.append(["Generated", timezone.localtime().strftime("%d %b %Y %H:%M")])
     info.append(["Tickets", len(tickets)])
+    info.append(["Total repair cost", format_cost(sum((t.repair_cost or 0) for t in tickets))])
     for label, value in describe_filters(data):
         info.append([label, value])
     info.column_dimensions["A"].width = 18
@@ -269,7 +281,9 @@ def build_pdf(tickets, data):
     pdf.set_text_color(90)
     for label, value in describe_filters(data):
         pdf.multi_cell(0, 5, clean(f"{label}: {value}"), new_x="LMARGIN", new_y="NEXT")
-    pdf.multi_cell(0, 5, clean(f"{len(tickets)} ticket{'s' if len(tickets) != 1 else ''}"), new_x="LMARGIN", new_y="NEXT")
+    total_cost = format_cost(sum((t.repair_cost or 0) for t in tickets))
+    pdf.multi_cell(0, 5, clean(f"{len(tickets)} ticket{'s' if len(tickets) != 1 else ''}, total repair cost {total_cost}"),
+                   new_x="LMARGIN", new_y="NEXT")
     pdf.set_text_color(0)
     pdf.ln(3)
 
@@ -293,6 +307,7 @@ def build_pdf(tickets, data):
         pdf.multi_cell(0, 5, clean(
             f"Barcode {row['Barcode']}   Serial {row['Serial number']}   |   "
             f"{row['Status']}   |   {row['Fault Type']}   |   Severity {row['Severity']}"
+            + (f"   |   Repair cost {format_cost(t.repair_cost)}" if t.repair_cost is not None else "")
         ), new_x="LMARGIN", new_y="NEXT")
         pdf.set_text_color(90)
         pdf.multi_cell(0, 5, clean(f"Created {row['Created']} by {row['Created by'] or '-'}   Last updated {row['Last updated']}"),

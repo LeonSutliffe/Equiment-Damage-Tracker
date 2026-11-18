@@ -5,6 +5,8 @@ transaction as the save, so the history can never be missing or out of step
 (architecture section 6).
 """
 
+from decimal import Decimal
+
 from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, transaction
 from django.db.models import Max
@@ -14,6 +16,22 @@ from .models import FieldChange, Item, ItemChange, Photo, Ticket
 from .photos import process_upload
 
 TEXT_FIELDS = ("status", "fault_type", "severity", "fault_description", "work_done")
+EDIT_FIELDS = TEXT_FIELDS + ("repair_cost",)
+
+
+def _clean(field, value):
+    if field == "repair_cost":
+        return None if value in ("", None) else value
+    return value or ""
+
+
+def _as_text(value):
+    """How a value is stored in FieldChange."""
+    if value is None:
+        return ""
+    if isinstance(value, Decimal):
+        return f"{value:.2f}"
+    return str(value)
 
 
 class ConflictError(Exception):
@@ -71,14 +89,15 @@ def create_ticket(item, user, data, photos=()):
                 now = timezone.now()
                 ticket = Ticket.objects.create(
                     number=_next_number(), item=item, created_by=user, created_at=now, updated_at=now,
-                    **{f: data.get(f, "") or "" for f in TEXT_FIELDS if f != "status"},
+                    **{f: _clean(f, data.get(f)) for f in EDIT_FIELDS if f != "status"},
                     status=data.get("status") or Ticket.Status.OPEN,
                 )
-                for field in TEXT_FIELDS:
+                for field in EDIT_FIELDS:
                     value = getattr(ticket, field)
-                    if value:
+                    if value not in ("", None):
                         FieldChange.objects.create(
-                            ticket=ticket, field=field, new_value=value, note="created", user=user, changed_at=now
+                            ticket=ticket, field=field, new_value=_as_text(value), note="created", user=user,
+                            changed_at=now,
                         )
                 _save_photos(ticket, user, photos, now)
                 return ticket
@@ -92,7 +111,8 @@ def update_ticket(ticket, user, data, expected_version, photos=()):
     """Save changed fields, log each one, and add any new photos.
 
     Raises ConflictError if the ticket was saved by someone else since
-    `expected_version` was read.
+    `expected_version` was read. Returns (ticket, summary): summary lists what
+    changed in words (empty when nothing changed), for the audit log.
     """
     photos = prepare_photos(photos)
     with transaction.atomic():
@@ -101,20 +121,31 @@ def update_ticket(ticket, user, data, expected_version, photos=()):
             raise ConflictError
         check_status_change(user, current.status, data.get("status", current.status))
         now = timezone.now()
-        changed = []
-        for field in TEXT_FIELDS:
+        changed, summary = [], []
+        for field in EDIT_FIELDS:
             if field not in data:
                 continue
-            old, new = getattr(current, field), data[field] or ""
+            old, new = getattr(current, field), _clean(field, data[field])
             if old != new:
                 changed.append(field)
                 setattr(current, field, new)
                 FieldChange.objects.create(
-                    ticket=current, field=field, old_value=old, new_value=new, user=user, changed_at=now
+                    ticket=current, field=field, old_value=_as_text(old), new_value=_as_text(new), user=user,
+                    changed_at=now,
                 )
+                label = Ticket.TRACKED_FIELDS[field]
+                if field in ("fault_description", "work_done"):
+                    summary.append(f"{label} edited")
+                else:
+                    summary.append(
+                        f"{label}: {current.display_value(field, _as_text(old)) or '(blank)'} → "
+                        f"{current.display_value(field, _as_text(new)) or '(blank)'}"
+                    )
         added = _save_photos(current, user, photos, now)
+        if added:
+            summary.append(f"{len(added)} photo{'s' if len(added) != 1 else ''} added")
         if not changed and not added:
-            return current, False
+            return current, []
         # Bump the version only if nobody else did in the meantime.
         bumped = Ticket.objects.filter(pk=current.pk, version=expected_version).update(
             version=expected_version + 1, updated_at=now, **{f: getattr(current, f) for f in changed}
@@ -123,7 +154,7 @@ def update_ticket(ticket, user, data, expected_version, photos=()):
             raise ConflictError
         current.version = expected_version + 1
         current.updated_at = now
-        return current, True
+        return current, summary
 
 
 def remove_photo(photo, user):
@@ -167,3 +198,26 @@ def create_item(user, cleaned):
             if value:
                 ItemChange.objects.create(item=item, field=field, new_value=value, user=user, changed_at=now)
         return item
+
+
+def write_off_item(item, user, reason):
+    """Retire an item. It and its tickets are kept; new tickets can't be logged on it."""
+    with transaction.atomic():
+        now = timezone.now()
+        Item.objects.filter(pk=item.pk).update(written_off_at=now, written_off_by=user, write_off_reason=reason)
+        ItemChange.objects.create(
+            item=item, field="write_off", new_value=f"Written off: {reason}", user=user, changed_at=now
+        )
+        item.written_off_at, item.written_off_by, item.write_off_reason = now, user, reason
+
+
+def reinstate_item(item, user):
+    """Undo a write-off."""
+    with transaction.atomic():
+        now = timezone.now()
+        ItemChange.objects.create(
+            item=item, field="write_off", old_value=f"Written off: {item.write_off_reason}",
+            new_value="Back in use", user=user, changed_at=now,
+        )
+        Item.objects.filter(pk=item.pk).update(written_off_at=None, written_off_by=None, write_off_reason="")
+        item.written_off_at, item.written_off_by, item.write_off_reason = None, None, ""

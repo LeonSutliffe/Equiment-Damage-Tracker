@@ -17,6 +17,9 @@ PERMISSIONS = [
     ("export", "Export", "Export lists to CSV and print ticket sheets."),
     ("manage_users", "Manage users", "Create and deactivate users, reset passwords, change a user's role."),
     ("manage_roles", "Manage roles", "Create roles and change which permissions each role has."),
+    ("write_off_item", "Write off item", "Write off (dispose of) an item, or put it back in use. Its history is kept."),
+    ("bulk_edit_tickets", "Bulk edit tickets", "Change the status or severity of many tickets at once, or comment on them all."),
+    ("view_audit_log", "View audit log", "See who logged in and what everyone changed."),
 ]
 PERMISSION_CODES = [code for code, _, _ in PERMISSIONS]
 
@@ -111,3 +114,34 @@ class PermissionChange(models.Model):
 
     def __str__(self):
         return f"{self.target}: {self.change}"
+
+
+class AuditEvent(models.Model):
+    """One line in the audit log: a login, logout or change, and who did it."""
+
+    class Kind(models.TextChoices):
+        LOGIN = "login", "Login"
+        LOGIN_FAILED = "login_failed", "Failed login"
+        LOGOUT = "logout", "Logout"
+        TICKET = "ticket", "Ticket"
+        COMMENT = "comment", "Comment"
+        PHOTO = "photo", "Photo"
+        ITEM = "item", "Item"
+        ITEM_TYPE = "item_type", "Item type"
+        BULK = "bulk", "Bulk change"
+        EXPORT = "export", "Export"
+        ACCOUNTS = "accounts", "Users and roles"
+
+    at = models.DateTimeField(default=timezone.now, db_index=True)
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    username = models.CharField(max_length=150, blank=True)  # kept even if the user is deleted, and for failed logins
+    kind = models.CharField(max_length=20, choices=Kind.choices)
+    text = models.CharField(max_length=1000)
+    link = models.CharField(max_length=200, blank=True)
+    ip = models.CharField(max_length=45, blank=True)
+
+    class Meta:
+        ordering = ["-at", "-id"]
+
+    def __str__(self):
+        return f"{self.at:%Y-%m-%d %H:%M} {self.username}: {self.text}"

@@ -64,15 +64,17 @@ class TicketForm(forms.ModelForm):
 
     class Meta:
         model = Ticket
-        fields = ["status", "fault_type", "severity", "fault_description", "work_done"]
+        fields = ["status", "fault_type", "severity", "fault_description", "work_done", "repair_cost"]
         widgets = {
+            "repair_cost": forms.NumberInput(attrs={"step": "0.01", "min": "0", "inputmode": "decimal", "placeholder": "0.00"}),
             "status": SegmentedRadio,
             "fault_type": SegmentedRadio,
             "severity": SegmentedRadio,
             "fault_description": forms.Textarea(attrs={"rows": 3}),
             "work_done": forms.Textarea(attrs={"rows": 3}),
         }
-        labels = {"fault_type": "Fault Type", "fault_description": "Fault Description", "work_done": "Work Done"}
+        labels = {"fault_type": "Fault Type", "fault_description": "Fault Description", "work_done": "Work Done",
+                  "repair_cost": "Repair Cost (£)"}
 
     def __init__(self, *args, creating=False, **kwargs):
         super().__init__(*args, **kwargs)
@@ -93,3 +95,27 @@ class ItemTypeForm(forms.ModelForm):
         if ItemType.objects.filter(name__iexact=name).exclude(pk=self.instance.pk).exists():
             raise ValidationError("An item type with that name already exists.")
         return name
+
+
+class WriteOffForm(forms.Form):
+    reason = forms.CharField(
+        label="Reason", max_length=1000,
+        widget=forms.Textarea(attrs={"rows": 3, "placeholder": "e.g. Beyond economic repair, scrapped 18 Nov"}),
+    )
+
+
+class BulkTicketForm(forms.Form):
+    status = forms.ChoiceField(required=False, label="Set status",
+                               choices=[("", "Leave status")] + list(Ticket.Status.choices))
+    severity = forms.ChoiceField(required=False, label="Set severity",
+                                 choices=[("", "Leave severity")] + list(Ticket.Severity.choices))
+    fault_type = forms.ChoiceField(required=False, label="Set fault type",
+                                   choices=[("", "Leave fault type")] + list(Ticket.FaultType.choices))
+    comment = forms.CharField(required=False, label="Add a comment to each", max_length=5000,
+                              widget=forms.TextInput(attrs={"placeholder": "Comment for each (optional)"}))
+
+    def clean(self):
+        data = super().clean()
+        if not any(data.get(f) for f in ("status", "severity", "fault_type")) and not data.get("comment", "").strip():
+            raise ValidationError("Choose something to change, or type a comment.")
+        return data

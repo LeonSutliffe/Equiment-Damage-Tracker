@@ -1,6 +1,19 @@
 from django.conf import settings
+from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
+
+
+def format_cost(value):
+    """12.5 -> "£12.50"; blank stays blank."""
+    if value in ("", None):
+        return ""
+    try:
+        from decimal import Decimal
+
+        return f"£{Decimal(str(value)):,.2f}"
+    except Exception:
+        return str(value)
 
 
 class ItemType(models.Model):
@@ -27,14 +40,26 @@ class Item(models.Model):
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
     created_at = models.DateTimeField(default=timezone.now)
     active = models.BooleanField(default=True)
+    # Write-off / disposal: the item and its history are kept, but no new tickets can be logged.
+    written_off_at = models.DateTimeField(null=True, blank=True)
+    written_off_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    write_off_reason = models.TextField(blank=True)
 
     TRACKED_FIELDS = {"item_type": "Item type", "barcode": "Barcode", "serial_number": "Serial number", "notes": "Notes"}
+    # Fields with a history popup: the editable ones plus write-off/reinstate.
+    HISTORY_FIELDS = {**TRACKED_FIELDS, "write_off": "Write-off"}
 
     class Meta:
         ordering = ["item_type__name", "serial_number"]
 
     def __str__(self):
         return f"{self.item_type} ({self.serial_number})"
+
+    @property
+    def is_written_off(self):
+        return self.written_off_at is not None
 
 
 class ItemChange(models.Model):
@@ -72,6 +97,9 @@ class Ticket(models.Model):
     severity = models.CharField(max_length=10, choices=Severity.choices)
     fault_description = models.TextField(blank=True)
     work_done = models.TextField(blank=True)
+    repair_cost = models.DecimalField(
+        max_digits=10, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)]
+    )
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(default=timezone.now)
@@ -86,6 +114,7 @@ class Ticket(models.Model):
         "fault_description": "Fault Description",
         "photos": "Photos",
         "work_done": "Work Done",
+        "repair_cost": "Repair Cost",
     }
 
     class Meta:
@@ -114,6 +143,8 @@ class Ticket(models.Model):
                 return choices(raw).label
             except ValueError:
                 return raw
+        if field == "repair_cost" and raw not in ("", None):
+            return format_cost(raw)
         return raw
 
 

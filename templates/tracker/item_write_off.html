@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Write off {{ item }}{% endblock %}
+{% block content %}
+<div class="narrow">
+  <h1>Write off {{ item.item_type }}</h1>
+  <p>Barcode <strong>{{ item.barcode }}</strong> · Serial <strong>{{ item.serial_number }}</strong></p>
+  <p class="muted">The item and all its tickets, photos and history are kept. It is hidden from the normal item list, and new faults can't be logged on it. You can put it back in use later.</p>
+  {% if open_tickets %}
+  <div class="flash flash-warning">
+    <strong>This item still has {{ open_tickets|length }} open ticket{{ open_tickets|length|pluralize }}:</strong>
+    {% for t in open_tickets %}<a href="{% url 'ticket_detail' t.number %}">{{ t.code }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}.
+    You may want to resolve {{ open_tickets|length|pluralize:"it,them" }} first.
+  </div>
+  {% endif %}
+  <form method="post" class="card">{% csrf_token %}
+    {% include "_form_fields.html" %}
+    <button type="submit" class="btn danger-fill">Write off this item</button>
+    <a class="btn" href="{% url 'item_detail' item.pk %}">Cancel</a>
+  </form>
+</div>
+{% endblock %}
