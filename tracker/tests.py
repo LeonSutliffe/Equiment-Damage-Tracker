@@ -273,3 +273,43 @@ class CopyDataScriptTests(TestCase):
             self.assertTrue((src / "db.sqlite3").exists())  # source untouched
             with self.assertRaises(SystemExit):
                 mod.main(src, dst)
+
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class CommentTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("jsmith", password="x", display_name="J. Smith", role=Role.objects.get(name="User"))
+        item = Item.objects.create(item_type=ItemType.objects.create(name="Ladder"), barcode="1", serial_number="S1")
+        self.t = create_ticket(item, self.user, {"fault_type": "safety", "severity": "high"})
+        self.client.force_login(self.user)
+
+    def test_add_and_show_comment(self):
+        url = reverse("comment_add", args=[self.t.number])
+        r = self.client.post(url, {"text": "Ordered a new rung"})
+        self.assertRedirects(r, reverse("ticket_detail", args=[self.t.number]) + "#comments", fetch_redirect_response=False)
+        self.client.post(url, {"text": "   "})  # blank ignored
+        self.assertEqual(self.t.comments.count(), 1)
+        r = self.client.get(reverse("ticket_detail", args=[self.t.number]))
+        self.assertContains(r, "Ordered a new rung")
+        self.assertContains(r, "J. Smith")
+
+    def test_comment_needs_edit_permission(self):
+        role = self.user.role
+        role.permissions.remove(*role.permissions.filter(code="edit_ticket"))
+        r = self.client.post(reverse("comment_add", args=[self.t.number]), {"text": "x"})
+        self.assertEqual(r.status_code, 403)
+
+    def test_comments_in_reports(self):
+        from openpyxl import load_workbook
+
+        from .models import Comment
+
+        Comment.objects.create(ticket=self.t, user=self.user, text="Waiting for parts")
+        admin = User.objects.create_user("leon", password="x", role=Role.objects.get(name="Admin"))
+        self.client.force_login(admin)
+        r = self.client.get(reverse("reports"), {"action": "xlsx"})
+        ws = load_workbook(BytesIO(r.content))["Tickets"]
+        col = [c.value for c in ws[1]].index("Comments")
+        self.assertIn("Waiting for parts", ws[2][col].value)
+        r = self.client.get(reverse("reports"), {"action": "pdf"})
+        self.assertTrue(r.content.startswith(b"%PDF"))

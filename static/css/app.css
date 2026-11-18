@@ -159,3 +159,13 @@ fieldset.chip-group legend { font-weight: 600; margin-bottom: 6px; padding: 0; }
 .report-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .report-actions .btn { flex: 1 1 180px; }
 input[type=date] { width: 100%; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; font: inherit; background: #fff; }
+
+/* Comments */
+.comments h2 { margin-top: 0; }
+.comment { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.comment .when { font-size: .85rem; color: var(--muted); }
+.comment .who { color: var(--text); font-weight: 600; margin-left: 6px; }
+.comment .text { margin-top: 3px; word-break: break-word; }
+.comments form { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.comments form .btn { align-self: flex-start; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }

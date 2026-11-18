@@ -4,6 +4,7 @@ from django.core.paginator import Paginator
 from django.db.models import Case, Count, IntegerField, Q, Value, When
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.utils.http import urlencode
 from django.views.decorators.http import require_POST
@@ -11,7 +12,7 @@ from django.views.decorators.http import require_POST
 from accounts.permissions import require_perm
 
 from .forms import ItemForm, ItemTypeForm, TicketForm
-from .models import FieldChange, Item, ItemChange, ItemType, Photo, Ticket
+from .models import Comment, FieldChange, Item, ItemChange, ItemType, Photo, Ticket
 from .search import search
 from .services import ConflictError, create_item, create_ticket, remove_photo, update_item, update_ticket
 
@@ -158,7 +159,21 @@ def ticket_detail(request, number):
 
 def _ticket_context(request, ticket, form, can_edit):
     photos = ticket.photos.filter(removed_at__isnull=True)
-    return {"form": form, "ticket": ticket, "item": ticket.item, "photos": photos, "can_edit": can_edit}
+    comments = ticket.comments.select_related("user")
+    return {"form": form, "ticket": ticket, "item": ticket.item, "photos": photos, "can_edit": can_edit,
+            "comments": comments}
+
+
+@require_POST
+@require_perm("edit_ticket")
+def comment_add(request, number):
+    ticket = get_object_or_404(Ticket, number=number)
+    text = request.POST.get("text", "").strip()
+    if text:
+        Comment.objects.create(ticket=ticket, user=request.user, text=text[:5000])
+        Ticket.objects.filter(pk=ticket.pk).update(updated_at=timezone.now())
+        messages.success(request, "Comment added.")
+    return redirect(reverse("ticket_detail", args=[ticket.number]) + "#comments")
 
 
 def _entry(change, old, new):

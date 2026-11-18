@@ -93,7 +93,7 @@ def _photos(ticket):
 
 
 COLUMNS = ["Ticket", "Created", "Created by", "Status", "Fault Type", "Severity", "Item type", "Barcode",
-           "Serial number", "Fault Description", "Work Done", "Last updated"]
+           "Serial number", "Fault Description", "Work Done", "Comments", "Last updated"]
 
 
 def ticket_row(t):
@@ -109,6 +109,9 @@ def ticket_row(t):
         "Serial number": t.item.serial_number,
         "Fault Description": t.fault_description,
         "Work Done": t.work_done,
+        "Comments": "\n".join(
+            f"{_local(c.created_at)} {c.user.label if c.user else '(deleted user)'}: {c.text}" for c in t.comments.all()
+        ),
         "Last updated": _local(t.updated_at),
     }
 
@@ -126,7 +129,7 @@ def build_xlsx(tickets, data):
     wb = Workbook()
     ws = wb.active
     ws.title = "Tickets"
-    tickets = list(tickets.prefetch_related("photos"))
+    tickets = list(tickets.prefetch_related("photos", "comments__user"))
 
     headers = COLUMNS + ["Photos"]
     ws.append(headers)
@@ -136,7 +139,7 @@ def build_xlsx(tickets, data):
         cell.alignment = Alignment(vertical="center")
     widths = {"Ticket": 10, "Created": 17, "Created by": 14, "Status": 12, "Fault Type": 13, "Severity": 9,
               "Item type": 20, "Barcode": 15, "Serial number": 15, "Fault Description": 45, "Work Done": 45,
-              "Last updated": 17, "Photos": 8}
+              "Comments": 45, "Last updated": 17, "Photos": 8}
     for i, h in enumerate(headers, start=1):
         ws.column_dimensions[get_column_letter(i)].width = widths.get(h, 14)
 
@@ -220,7 +223,7 @@ def build_pdf(tickets, data):
     from fpdf import FPDF
 
     include_photos = data.get("include_photos")
-    tickets = list(tickets.prefetch_related("photos"))
+    tickets = list(tickets.prefetch_related("photos", "comments__user"))
     generated = timezone.localtime().strftime("%d %b %Y %H:%M")
 
     class PDF(FPDF):
@@ -281,7 +284,7 @@ def build_pdf(tickets, data):
         pdf.multi_cell(0, 5, clean(f"Created {row['Created']} by {row['Created by'] or '-'}   Last updated {row['Last updated']}"),
                        new_x="LMARGIN", new_y="NEXT")
         pdf.set_text_color(0)
-        for label in ("Fault Description", "Work Done"):
+        for label in ("Fault Description", "Work Done", "Comments"):
             if row[label]:
                 pdf.set_font(font, "B", 9)
                 pdf.cell(0, 5, clean(label), new_x="LMARGIN", new_y="NEXT")
