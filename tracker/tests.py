@@ -240,3 +240,118 @@ class ReportTests(TestCase):
         self.assertTrue(r.content.startswith(b"%PDF"))
         r = self.client.get(self.url, {"action": "xlsx", "severities": ["medium"]})
         self.assertEqual(r.status_code, 200)
+
+
+class CopyDataScriptTests(TestCase):
+    """deploy/windows/copy_data.py must copy everything and refuse to overwrite."""
+
+    def test_copy_and_verify(self):
+        import importlib.util
+        import sqlite3
+
+        spec = importlib.util.spec_from_file_location(
+            "copy_data", Path(__file__).resolve().parent.parent / "deploy" / "windows" / "copy_data.py"
+        )
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        with tempfile.TemporaryDirectory() as tmp:
+            src, dst = Path(tmp) / "src", Path(tmp) / "dst"
+            (src / "photos").mkdir(parents=True)
+            con = sqlite3.connect(src / "db.sqlite3")
+            con.execute("PRAGMA journal_mode=WAL")
+            con.execute("CREATE TABLE t (x)")
+            con.executemany("INSERT INTO t VALUES (?)", [(i,) for i in range(50)])
+            con.commit()  # left open, so changes sit in the -wal file
+            (src / "secret_key.txt").write_text("k")
+            (src / "photos" / "a.jpg").write_bytes(b"x" * 1000)
+            mod.main(src, dst)
+            con.close()
+            copy = sqlite3.connect(dst / "db.sqlite3")
+            self.assertEqual(copy.execute("SELECT COUNT(*) FROM t").fetchone()[0], 50)
+            copy.close()
+            self.assertEqual((dst / "photos" / "a.jpg").read_bytes(), b"x" * 1000)
+            self.assertTrue((src / "db.sqlite3").exists())  # source untouched
+            with self.assertRaises(SystemExit):
+                mod.main(src, dst)
+
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class CommentTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("jsmith", password="x", display_name="J. Smith", role=Role.objects.get(name="User"))
+        item = Item.objects.create(item_type=ItemType.objects.create(name="Ladder"), barcode="1", serial_number="S1")
+        self.t = create_ticket(item, self.user, {"fault_type": "safety", "severity": "high"})
+        self.client.force_login(self.user)
+
+    def test_add_and_show_comment(self):
+        url = reverse("comment_add", args=[self.t.number])
+        r = self.client.post(url, {"text": "Ordered a new rung"})
+        self.assertRedirects(r, reverse("ticket_detail", args=[self.t.number]) + "#comments", fetch_redirect_response=False)
+        self.client.post(url, {"text": "   "})  # blank ignored
+        self.assertEqual(self.t.comments.count(), 1)
+        r = self.client.get(reverse("ticket_detail", args=[self.t.number]))
+        self.assertContains(r, "Ordered a new rung")
+        self.assertContains(r, "J. Smith")
+
+    def test_comment_needs_edit_permission(self):
+        role = self.user.role
+        role.permissions.remove(*role.permissions.filter(code="edit_ticket"))
+        r = self.client.post(reverse("comment_add", args=[self.t.number]), {"text": "x"})
+        self.assertEqual(r.status_code, 403)
+
+    def test_comments_in_reports(self):
+        from openpyxl import load_workbook
+
+        from .models import Comment
+
+        Comment.objects.create(ticket=self.t, user=self.user, text="Waiting for parts")
+        admin = User.objects.create_user("leon", password="x", role=Role.objects.get(name="Admin"))
+        self.client.force_login(admin)
+        r = self.client.get(reverse("reports"), {"action": "xlsx"})
+        ws = load_workbook(BytesIO(r.content))["Tickets"]
+        col = [c.value for c in ws[1]].index("Comments")
+        self.assertIn("Waiting for parts", ws[2][col].value)
+        r = self.client.get(reverse("reports"), {"action": "pdf"})
+        self.assertTrue(r.content.startswith(b"%PDF"))
+
+
+@override_settings(SECURE_SSL_REDIRECT=False)
+class LabelTests(TestCase):
+    def setUp(self):
+        admin = User.objects.create_user("leon", password="x", role=Role.objects.get(name="Admin"))
+        item = Item.objects.create(item_type=ItemType.objects.create(name="Ladder"), barcode="501234567", serial_number="LD-1")
+        for sev in ("low", "medium", "high"):
+            create_ticket(item, admin, {"fault_type": "safety", "severity": sev})
+        self.client.force_login(admin)
+
+    def pages(self, content):
+        return content.count(b"/Type /Page\n") or content.count(b"/Type /Page ") or content.count(b"/Type /Page>")
+
+    def test_layout_geometry(self):
+        from . import labels
+
+        self.assertAlmostEqual(labels.LEFT, 4.75, places=2)
+        self.assertAlmostEqual(labels.TOP, 10.7, places=2)
+        x, y = labels.label_position(64)  # bottom-right label ends at the sheet's mirrored margins
+        self.assertAlmostEqual(x + labels.LABEL_W, 210 - 4.75, places=2)
+        self.assertAlmostEqual(y + labels.LABEL_H, 297 - 10.7, places=2)
+
+    def test_labels_pdf(self):
+        r = self.client.get(reverse("reports"), {"action": "labels"})
+        self.assertEqual(r["Content-Type"], "application/pdf")
+        self.assertIn("labels_", r["Content-Disposition"])
+        self.assertTrue(r.content.startswith(b"%PDF"))
+
+    def test_page_count(self):
+        from .labels import build_labels_pdf
+
+        tickets = list(Ticket.objects.select_related("item")) * 30  # 90 labels -> 2 sheets
+        one = build_labels_pdf(tickets[:65])
+        two = build_labels_pdf(tickets)
+        filled = build_labels_pdf(tickets[:3], fill_templates=True, template_severity="high")
+        offset = build_labels_pdf(tickets[:3], start_at=64)  # 64, 65, then next sheet
+        from fpdf import FPDF  # noqa: F401
+        import re
+
+        count = lambda b: len(re.findall(rb"/Type /Page\b(?!s)", b))  # noqa: E731
+        self.assertEqual((count(one), count(two), count(filled), count(offset)), (1, 2, 1, 2))

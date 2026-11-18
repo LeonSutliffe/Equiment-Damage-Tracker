@@ -155,3 +155,15 @@ class FieldChange(models.Model):
     class Meta:
         ordering = ["-changed_at", "-id"]
         indexes = [models.Index(fields=["ticket", "field"])]
+
+
+class Comment(models.Model):
+    """A note on a ticket. Comments can't be edited or deleted, so the conversation stays as written."""
+
+    ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="comments")
+    text = models.TextField()
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["created_at", "id"]

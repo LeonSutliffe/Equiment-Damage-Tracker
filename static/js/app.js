@@ -123,6 +123,21 @@
     if (row && !e.target.closest("a,button,input,select")) window.location = row.getAttribute("data-href");
   });
 
+  // Theme: Auto (follows the device) -> Light -> Dark, remembered on this device.
+  var toggle = document.querySelector("[data-theme-toggle]");
+  if (toggle) {
+    var names = { "": "Auto", light: "Light", dark: "Dark" };
+    var show = function () { toggle.textContent = "Theme: " + names[document.documentElement.dataset.theme || ""]; };
+    show();
+    toggle.addEventListener("click", function () {
+      var order = ["", "light", "dark"];
+      var next = order[(order.indexOf(document.documentElement.dataset.theme || "") + 1) % 3];
+      if (next) document.documentElement.dataset.theme = next; else delete document.documentElement.dataset.theme;
+      try { if (next) localStorage.setItem("theme", next); else localStorage.removeItem("theme"); } catch (e) {}
+      show();
+    });
+  }
+
   // Prevent double submits (e.g. a slow photo upload tapped twice).
   document.addEventListener("submit", function (e) {
     var form = e.target;

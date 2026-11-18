@@ -89,8 +89,25 @@ powershell -ExecutionPolicy Bypass -File C:\DamageTracker\deploy\windows\update.
 
 ## Where the data is
 
-Everything is in `C:\DamageTracker\data`: the database (`db.sqlite3`), the `photos` folder and the secret key. **There are no backups** (architecture 7.7): if this PC's disk fails, everything is lost. To add backups later, copy the `data` folder somewhere else each night with a scheduled task.
+The database (`db.sqlite3`), the `photos` folder and the secret key live in **`C:\ProgramData\DamageTracker\data`**, outside the program folder, so updating or reinstalling the program never touches them. (`C:\ProgramData` is hidden in Explorer by default; type the path into the address bar.)
+
+That folder is **locked against accidental deletion**:
+- Normal accounts, and any program run without "Run as administrator", can only read it.
+- Even as an administrator, Windows refuses to delete the folder, the database, the secret key or any photo.
+- The app keeps working because it never deletes these files (removing a photo in the app only hides it).
+
+To delete it deliberately one day, run `icacls "C:\ProgramData\DamageTracker\data" /reset /T` as administrator first.
+
+**Moving an older install.** Installs from before this change keep their data in `C:\DamageTracker\data`. To move it, run this in an admin PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File C:\DamageTracker\deploy\windows\move-data.ps1
+```
+
+It stops the app, copies everything, and checks the copy (database integrity, row counts, every photo byte for byte). Then it switches the app over, confirms it answers, and locks the new folder. If any step fails it switches back and changes nothing. The old folder is renamed to `data.old-<date>`, not deleted, so you have a spare copy.
+
+**There are no backups** (architecture 7.7). The lock stops accidental deletion, but not a failed disk. To add backups later, copy the data folder somewhere else each night with a scheduled task.
 
 ## Moving to another PC later
 
-Install Python on the new PC, copy the whole `C:\DamageTracker` folder (including `data`, `caddy\data` and `tools`), run `install.ps1` again, and point the name at the new PC's IP address. Because the Caddy certificate authority comes with the folder, devices don't need to trust a new certificate.
+Install Python on the new PC, copy the whole `C:\DamageTracker` folder (including `caddy\data` and `tools`) and the `C:\ProgramData\DamageTracker\data` folder (copy, don't move), run `install.ps1` again, and point the name at the new PC's IP address. Because the Caddy certificate authority comes with the folder, devices don't need to trust a new certificate.

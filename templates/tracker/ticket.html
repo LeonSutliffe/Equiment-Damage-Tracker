@@ -3,7 +3,7 @@
 {% block content %}
 <div class="ticket-head">
   <h1>{% if ticket %}{{ ticket.code }}{% else %}New ticket{% endif %}</h1>
-  <a href="{% url 'item_detail' item.pk %}">{{ item.item_type }} ({{ item.serial_number }})</a>
+  <a href="{% url 'item_detail' item.pk %}">{{ item.item_type }} ({{ item.barcode }})</a>
   {% if ticket %}<span class="badge {{ ticket.status }}">{{ ticket.get_status_display }}</span>{% endif %}
 </div>
 
@@ -56,6 +56,25 @@
   {% if can_edit %}<button type="submit" class="btn primary wide">{% if ticket %}Save{% else %}Create ticket{% endif %}</button>{% endif %}
   {% if ticket %}<p class="muted small">Press and hold (or right-click) a field, or tap &#128339;, to see who changed it and when. Opened {{ ticket.created_at|date:"j M Y H:i" }}.</p>{% endif %}
 </form>
+
+{% if ticket %}
+<section class="card comments" id="comments">
+  <h2>Comments{% if comments %} ({{ comments|length }}){% endif %}</h2>
+  {% for c in comments %}
+    <div class="comment">
+      <div class="when">{{ c.created_at|date:"j M Y H:i" }} <span class="who">{{ c.user.label|default:"(deleted user)" }}</span></div>
+      <div class="text">{{ c.text|linebreaksbr }}</div>
+    </div>
+  {% empty %}<p class="muted">No comments yet.</p>{% endfor %}
+  {% if can_edit %}
+  <form method="post" action="{% url 'comment_add' ticket.number %}">{% csrf_token %}
+    <label for="comment-text" class="sr-only">Add a comment</label>
+    <textarea id="comment-text" name="text" rows="2" placeholder="Add a comment…" required></textarea>
+    <button type="submit" class="btn">Add comment</button>
+  </form>
+  {% endif %}
+</section>
+{% endif %}
 
 {% for p in photos %}{% if perms_ok.remove_photo %}
 <form id="remove-{{ p.pk }}" method="post" action="{% url 'photo_remove' p.pk %}" hidden>{% csrf_token %}</form>

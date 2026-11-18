@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Faults{% endblock %} · Equipment Damage Tracker</title>
+  <script>try { var t = localStorage.getItem("theme"); if (t === "light" || t === "dark") document.documentElement.dataset.theme = t; } catch (e) {}</script>
+  <meta name="color-scheme" content="light dark">
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
   <script src="{% static 'js/app.js' %}" defer></script>
 </head>
@@ -20,6 +22,7 @@
     {% if perms_ok.manage_users %}<a href="{% url 'user_list' %}">Users</a>{% endif %}
     {% if perms_ok.manage_roles %}<a href="{% url 'role_list' %}">Roles</a>{% endif %}
   </nav>
+  <button type="button" class="theme-toggle" data-theme-toggle title="Switch between automatic, light and dark">Theme: Auto</button>
   <form method="post" action="{% url 'logout' %}" class="logout">{% csrf_token %}
     <span class="who">{{ user.label }}</span>
     <button type="submit" class="link">Log out</button>

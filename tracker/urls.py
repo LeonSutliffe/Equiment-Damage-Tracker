@@ -12,6 +12,7 @@ urlpatterns = [
     path("items/<int:item_pk>/tickets/new/", views.ticket_create, name="ticket_create"),
     path("tickets/open/", views.open_tickets, name="open_tickets"),
     path("tickets/<int:number>/", views.ticket_detail, name="ticket_detail"),
+    path("tickets/<int:number>/comments/", views.comment_add, name="comment_add"),
     path("tickets/<int:number>/history/<str:field>/", views.ticket_history, name="ticket_history"),
     path("photos/<int:pk>/", views.photo_view, name="photo_view"),
     path("photos/<int:pk>/thumb/", views.photo_thumb, name="photo_thumb"),
