@@ -106,11 +106,11 @@ class WriteOffForm(forms.Form):
 
 class BulkTicketForm(forms.Form):
     status = forms.ChoiceField(required=False, label="Set status",
-                               choices=[("", "Leave status")] + list(Ticket.Status.choices))
+                               choices=[("", "Ignore status")] + list(Ticket.Status.choices))
     severity = forms.ChoiceField(required=False, label="Set severity",
-                                 choices=[("", "Leave severity")] + list(Ticket.Severity.choices))
+                                 choices=[("", "Ignore severity")] + list(Ticket.Severity.choices))
     fault_type = forms.ChoiceField(required=False, label="Set fault type",
-                                   choices=[("", "Leave fault type")] + list(Ticket.FaultType.choices))
+                                   choices=[("", "Ignore fault type")] + list(Ticket.FaultType.choices))
     comment = forms.CharField(required=False, label="Add a comment to each", max_length=5000,
                               widget=forms.TextInput(attrs={"placeholder": "Comment for each (optional)"}))
 
