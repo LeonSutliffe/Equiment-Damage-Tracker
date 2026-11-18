@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}History: {{ item }}{% endblock %}
+{% block content %}
+<div class="ticket-head">
+  <h1>Item history</h1>
+  <a href="{% url 'item_detail' item.pk %}">{{ item.item_type }} ({{ item.barcode }})</a>
+  {% if item.is_written_off %}<span class="badge writeoff">Written off</span>{% endif %}
+</div>
+
+<div class="card stats">
+  <div><span class="stat">{{ summary.tickets }}</span> ticket{{ summary.tickets|pluralize }}</div>
+  <div><span class="stat">{{ summary.open }}</span> open</div>
+  <div><span class="stat">{% if summary.total_cost is not None %}£{{ summary.total_cost|floatformat:"2g" }}{% else %}£0.00{% endif %}</span> repair costs</div>
+  {% if summary.faults %}<div>{% for label, n in summary.faults %}<span class="chip">{{ label }} × {{ n }}</span> {% endfor %}</div>{% endif %}
+  {% if summary.first %}<div class="muted small">First fault {{ summary.first|date:"j M Y" }}{% if summary.tickets > 1 %}, latest {{ summary.last|date:"j M Y" }}{% endif %}</div>{% endif %}
+</div>
+
+{% if tickets %}
+<h2>Tickets</h2>
+<table class="list">
+  <thead><tr><th>Ticket</th><th>Opened</th><th>Status</th><th>Fault</th><th>Severity</th><th>Cost</th><th>Description</th></tr></thead>
+  <tbody>
+  {% for t in tickets %}
+    <tr data-href="{% url 'ticket_detail' t.number %}">
+      <td><a href="{% url 'ticket_detail' t.number %}">{{ t.code }}</a></td>
+      <td>{{ t.created_at|date:"j M Y" }}</td>
+      <td><span class="badge {{ t.status }}">{{ t.get_status_display }}</span></td>
+      <td>{{ t.get_fault_type_display }}</td><td>{{ t.get_severity_display }}</td>
+      <td>{% if t.repair_cost is not None %}£{{ t.repair_cost|floatformat:"2g" }}{% endif %}</td>
+      <td>{{ t.fault_description|truncatechars:70 }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h2>Timeline</h2>
+<ol class="timeline">
+  {% for e in events %}
+    <li class="tl-{{ e.kind }}">
+      <div class="tl-when">{{ e.when|date:"j M Y H:i" }}{% if e.who %} · {{ e.who }}{% endif %}</div>
+      <div>{% if e.ticket %}<a href="{% url 'ticket_detail' e.ticket.number %}"><strong>{{ e.ticket.code }}</strong></a> {% endif %}{{ e.text|linebreaksbr }}</div>
+    </li>
+  {% endfor %}
+</ol>
+{% endblock %}

@@ -8,9 +8,10 @@
   <select name="item_type"><option value="">All item types</option>{% for t in item_types %}<option value="{{ t.pk }}"{% if filters.item_type == t.pk|stringformat:"s" %} selected{% endif %}>{{ t.name }}</option>{% endfor %}</select>
   <button class="btn">Filter</button>
 </form>
-<ul class="pick-list">
+{% include "tracker/_bulk_bar.html" %}
+<ul class="pick-list{% if bulk_form %} selectable{% endif %}">
   {% for t in page %}
-    <li><a href="{% url 'ticket_detail' t.number %}">
+    <li>{% if bulk_form %}<input type="checkbox" name="tickets" value="{{ t.number }}" form="bulk-form" aria-label="Select {{ t.code }}">{% endif %}<a href="{% url 'ticket_detail' t.number %}">
       <strong>{{ t.code }} · {{ t.item.item_type }} ({{ t.item.serial_number }})</strong>
       <span><span class="badge {{ t.status }}">{{ t.get_status_display }}</span>
         <span class="badge ft-{{ t.fault_type }}">{{ t.get_fault_type_display }}</span>

@@ -7,6 +7,23 @@
   {% if ticket %}<span class="badge {{ ticket.status }}">{{ ticket.get_status_display }}</span>{% endif %}
 </div>
 
+{% if item.is_written_off %}
+<div class="flash flash-warning">This item was written off on {{ item.written_off_at|date:"j M Y" }}{% if item.write_off_reason %}: {{ item.write_off_reason }}{% endif %}</div>
+{% endif %}
+
+{% if already_open %}
+<div class="flash flash-warning duplicate-warning">
+  <strong>This item already has {{ already_open|length }} open ticket{{ already_open|length|pluralize }}.</strong>
+  If it's the same fault, add to that ticket instead of starting a new one.
+  <ul>{% for t in already_open %}
+    <li><a href="{% url 'ticket_detail' t.number %}"><strong>{{ t.code }}</strong></a>
+      <span class="badge {{ t.status }}">{{ t.get_status_display }}</span>
+      {{ t.get_fault_type_display }} · {{ t.get_severity_display }} · opened {{ t.created_at|date:"j M Y" }}
+      {% if t.fault_description %}<br><span class="muted">{{ t.fault_description|truncatechars:120 }}</span>{% endif %}</li>
+  {% endfor %}</ul>
+</div>
+{% endif %}
+
 {% if conflict %}
 <div class="flash flash-warning">
   <strong>Someone else saved this ticket while you were editing it.</strong>
@@ -52,6 +69,7 @@
   </div>
 
   {% include "tracker/_ticket_field.html" with field=form.work_done name="work_done" %}
+  {% include "tracker/_ticket_field.html" with field=form.repair_cost name="repair_cost" %}
 
   {% if can_edit %}<button type="submit" class="btn primary wide">{% if ticket %}Save{% else %}Create ticket{% endif %}</button>{% endif %}
   {% if ticket %}<p class="muted small">Press and hold (or right-click) a field, or tap &#128339;, to see who changed it and when. Opened {{ ticket.created_at|date:"j M Y H:i" }}.</p>{% endif %}

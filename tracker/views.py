@@ -2,20 +2,30 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_not_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
-from django.db.models import Case, Count, IntegerField, Q, Value, When
+from django.db.models import Case, Count, IntegerField, Q, Sum, Value, When
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.http import urlencode
+from django.utils.http import url_has_allowed_host_and_scheme, urlencode
 from django.views.decorators.http import require_POST
 
+from accounts.audit import record
 from accounts.permissions import require_perm
 
-from .forms import ItemForm, ItemTypeForm, TicketForm
+from .forms import BulkTicketForm, ItemForm, ItemTypeForm, TicketForm, WriteOffForm
 from .models import Comment, FieldChange, Item, ItemChange, ItemType, Photo, Ticket
 from .search import search
-from .services import ConflictError, create_item, create_ticket, remove_photo, update_item, update_ticket
+from .services import (
+    ConflictError,
+    create_item,
+    create_ticket,
+    reinstate_item,
+    remove_photo,
+    update_item,
+    update_ticket,
+    write_off_item,
+)
 
 OPEN_STATUSES = [Ticket.Status.OPEN, Ticket.Status.IN_PROGRESS]
 
@@ -48,19 +58,108 @@ def item_list(request):
     type_id = request.GET.get("type")
     if type_id and type_id.isdigit():
         items = items.filter(item_type_id=type_id)
+    state = request.GET.get("state", "in_use")
+    if state == "in_use":
+        items = items.filter(written_off_at__isnull=True)
+    elif state == "written_off":
+        items = items.filter(written_off_at__isnull=False)
     page = Paginator(items, 50).get_page(request.GET.get("page"))
     return render(
         request,
         "tracker/item_list.html",
-        {"page": page, "item_types": ItemType.objects.all(), "type_id": type_id or ""},
+        {"page": page, "item_types": ItemType.objects.all(), "type_id": type_id or "", "state": state,
+         "filter_query": urlencode({k: v for k, v in (("type", type_id or ""), ("state", state)) if v})},
     )
 
 
 @require_perm("view")
 def item_detail(request, pk):
-    item = get_object_or_404(Item.objects.select_related("item_type"), pk=pk)
+    item = get_object_or_404(Item.objects.select_related("item_type", "written_off_by"), pk=pk)
     tickets = item.tickets.all().order_by("-created_at")
     return render(request, "tracker/item_detail.html", {"item": item, "tickets": tickets})
+
+
+@require_perm("view")
+def item_timeline(request, pk):
+    """Everything that ever happened to one item, newest first, with a summary."""
+    item = get_object_or_404(Item.objects.select_related("item_type", "created_by"), pk=pk)
+    tickets = list(item.tickets.all().order_by("created_at"))
+    by_id = {t.pk: t for t in tickets}
+    events = []
+
+    def add(when, who, kind, text, ticket=None):
+        events.append({"when": when, "who": who.label if who else "", "kind": kind, "text": text, "ticket": ticket})
+
+    add(item.created_at, item.created_by, "item", "Item added")
+    for c in ItemChange.objects.filter(item=item).select_related("user"):
+        if c.field == "write_off":
+            add(c.changed_at, c.user, "writeoff", c.new_value if c.new_value != "Back in use" else "Put back in use")
+        elif c.old_value or c.changed_at != item.created_at:
+            add(c.changed_at, c.user, "item",
+                f"{Item.TRACKED_FIELDS.get(c.field, c.field)} changed from {c.old_value or '(blank)'} to {c.new_value or '(blank)'}")
+    for t in tickets:
+        desc = f": {t.fault_description}" if t.fault_description else ""
+        add(t.created_at, t.created_by, "opened",
+            f"Fault logged, {t.get_fault_type_display()}, {t.get_severity_display()} severity{desc}", t)
+    changes = FieldChange.objects.filter(ticket__in=tickets).exclude(note="created").select_related("user")
+    for c in changes:
+        t = by_id[c.ticket_id]
+        label = Ticket.TRACKED_FIELDS.get(c.field, c.field)
+        if c.field == "photos":
+            text = f"Photo {c.note}"
+        elif c.field in ("fault_description", "work_done"):
+            text = f"{label}: {c.new_value}" if c.new_value else f"{label} cleared"
+        else:
+            old, new = t.display_value(c.field, c.old_value), t.display_value(c.field, c.new_value)
+            text = f"{label} changed from {old or '(blank)'} to {new or '(blank)'}"
+        kind = "resolved" if c.field == "status" and c.new_value == Ticket.Status.RESOLVED else "change"
+        add(c.changed_at, c.user, kind, text, t)
+    for c in Comment.objects.filter(ticket__in=tickets).select_related("user"):
+        add(c.created_at, c.user, "comment", f"Comment: {c.text}", by_id[c.ticket_id])
+    events.sort(key=lambda e: e["when"], reverse=True)
+
+    fault_counts = {}
+    for t in tickets:
+        fault_counts[t.get_fault_type_display()] = fault_counts.get(t.get_fault_type_display(), 0) + 1
+    total_cost = item.tickets.aggregate(s=Sum("repair_cost"))["s"]
+    summary = {
+        "tickets": len(tickets),
+        "open": sum(1 for t in tickets if t.status in OPEN_STATUSES),
+        "faults": sorted(fault_counts.items()),
+        "total_cost": total_cost,
+        "first": tickets[0].created_at if tickets else None,
+        "last": tickets[-1].created_at if tickets else None,
+    }
+    return render(request, "tracker/item_timeline.html", {"item": item, "events": events, "summary": summary,
+                                                           "tickets": tickets[::-1]})
+
+
+@require_perm("write_off_item")
+def item_write_off(request, pk):
+    item = get_object_or_404(Item.objects.select_related("item_type"), pk=pk)
+    if item.is_written_off:
+        messages.info(request, "This item is already written off.")
+        return redirect("item_detail", pk=item.pk)
+    form = WriteOffForm(request.POST or None)
+    if request.method == "POST" and form.is_valid():
+        write_off_item(item, request.user, form.cleaned_data["reason"])
+        record(request, "item", f"Wrote off {item} (barcode {item.barcode}): {form.cleaned_data['reason']}",
+               reverse("item_detail", args=[item.pk]))
+        messages.success(request, f"{item} written off. Its history is kept.")
+        return redirect("item_detail", pk=item.pk)
+    open_list = item.tickets.filter(status__in=OPEN_STATUSES)
+    return render(request, "tracker/item_write_off.html", {"item": item, "form": form, "open_tickets": open_list})
+
+
+@require_POST
+@require_perm("write_off_item")
+def item_reinstate(request, pk):
+    item = get_object_or_404(Item, pk=pk)
+    if item.is_written_off:
+        reinstate_item(item, request.user)
+        record(request, "item", f"Put {item} (barcode {item.barcode}) back in use", reverse("item_detail", args=[item.pk]))
+        messages.success(request, f"{item} is back in use.")
+    return redirect("item_detail", pk=item.pk)
 
 
 @require_perm("create_item")
@@ -69,6 +168,7 @@ def item_create(request):
     form = ItemForm(request.POST or None, initial=initial)
     if request.method == "POST" and form.is_valid():
         item = create_item(request.user, form.cleaned_data)
+        record(request, "item", f"Added item {item} (barcode {item.barcode})", reverse("item_detail", args=[item.pk]))
         messages.success(request, f"Item {item} created.")
         if request.user.can("create_ticket"):
             return redirect("ticket_create", item_pk=item.pk)
@@ -82,7 +182,11 @@ def item_edit(request, pk):
     item = get_object_or_404(Item, pk=pk)
     form = ItemForm(request.POST or None, instance=item)
     if request.method == "POST" and form.is_valid():
+        changed = [Item.TRACKED_FIELDS[f] for f in form.changed_data if f in Item.TRACKED_FIELDS]
         update_item(form.instance, request.user, form.cleaned_data)
+        if changed:
+            record(request, "item", f"Edited item {item} (barcode {item.barcode}): {', '.join(changed)}",
+                   reverse("item_detail", args=[item.pk]))
         messages.success(request, "Item saved.")
         return redirect("item_detail", pk=item.pk)
     return render(request, "tracker/item_form.html", {"form": form, "title": f"Edit {item}", "item": item})
@@ -91,13 +195,13 @@ def item_edit(request, pk):
 @require_perm("view")
 def item_history(request, pk, field):
     item = get_object_or_404(Item, pk=pk)
-    if field not in Item.TRACKED_FIELDS:
+    if field not in Item.HISTORY_FIELDS:
         raise Http404
     changes = ItemChange.objects.filter(item=item, field=field).select_related("user")
     return render(
         request,
         "tracker/history_popup.html",
-        {"label": Item.TRACKED_FIELDS[field], "field": field, "entries": [_entry(c, c.old_value, c.new_value) for c in changes]},
+        {"label": Item.HISTORY_FIELDS[field], "field": field, "entries": [_entry(c, c.old_value, c.new_value) for c in changes]},
     )
 
 
@@ -107,6 +211,9 @@ def item_history(request, pk, field):
 @require_perm("create_ticket")
 def ticket_create(request, item_pk):
     item = get_object_or_404(Item.objects.select_related("item_type"), pk=item_pk)
+    if item.is_written_off:
+        messages.error(request, f"{item} has been written off, so new faults can't be logged on it.")
+        return redirect("item_detail", pk=item.pk)
     form = TicketForm(request.POST or None, request.FILES or None, creating=True)
     if request.method == "POST" and form.is_valid():
         try:
@@ -114,9 +221,15 @@ def ticket_create(request, item_pk):
         except ValidationError as exc:
             form.add_error("photos", exc)
         else:
+            record(request, "ticket",
+                   f"Opened {ticket.code} on {item} (barcode {item.barcode}): {ticket.get_fault_type_display()}, "
+                   f"{ticket.get_severity_display()}", reverse("ticket_detail", args=[ticket.number]))
             messages.success(request, f"Ticket {ticket.code} created.")
             return redirect("ticket_detail", number=ticket.number)
-    return render(request, "tracker/ticket.html", {"form": form, "item": item, "ticket": None, "can_edit": True})
+    # Duplicate warning: show any tickets already open on this item.
+    already_open = item.tickets.filter(status__in=OPEN_STATUSES).order_by("-created_at")
+    return render(request, "tracker/ticket.html", {"form": form, "item": item, "ticket": None, "can_edit": True,
+                                                   "already_open": already_open})
 
 
 @require_perm("view")
@@ -130,7 +243,8 @@ def ticket_detail(request, number):
             raise PermissionDenied("Your role can't edit tickets.")
         form = TicketForm(request.POST, request.FILES, instance=Ticket.objects.get(pk=ticket.pk))
         if form.is_valid():
-            data = {f: form.cleaned_data[f] for f in ("status", "fault_type", "severity", "fault_description", "work_done")}
+            data = {f: form.cleaned_data[f] for f in
+                    ("status", "fault_type", "severity", "fault_description", "work_done", "repair_cost")}
             try:
                 ticket, changed = update_ticket(
                     ticket, request.user, data, form.cleaned_data.get("version") or 0, form.cleaned_data.get("photos", [])
@@ -138,12 +252,15 @@ def ticket_detail(request, number):
             except ConflictError:
                 # Someone else saved first: show the latest version and what this user typed.
                 conflict = {
-                    Ticket.TRACKED_FIELDS[f]: ticket.display_value(f, v) for f, v in data.items() if v
+                    Ticket.TRACKED_FIELDS[f]: ticket.display_value(f, v) for f, v in data.items() if v not in ("", None)
                 }
                 ticket.refresh_from_db()
             except ValidationError as exc:
                 form.add_error("photos", exc)
             else:
+                if changed:
+                    record(request, "ticket", f"{ticket.code}: {'; '.join(changed)}",
+                           reverse("ticket_detail", args=[ticket.number]))
                 messages.success(request, f"{ticket.code} saved." if changed else "Nothing changed.")
                 return redirect("ticket_detail", number=ticket.number)
         if conflict is None and form.errors:
@@ -173,13 +290,14 @@ def comment_add(request, number):
     if text:
         Comment.objects.create(ticket=ticket, user=request.user, text=text[:5000])
         Ticket.objects.filter(pk=ticket.pk).update(updated_at=timezone.now())
+        record(request, "comment", f"Commented on {ticket.code}: {text[:200]}", reverse("ticket_detail", args=[ticket.number]))
         messages.success(request, "Comment added.")
     return redirect(reverse("ticket_detail", args=[ticket.number]) + "#comments")
 
 
 def _entry(change, old, new):
     return {"when": change.changed_at, "who": change.user.label if change.user else "(deleted user)",
-            "old": old, "new": new, "note": change.note}
+            "old": old, "new": new, "note": getattr(change, "note", "")}
 
 
 @require_perm("view")
@@ -226,7 +344,10 @@ def photo_thumb(request, pk):
 @require_perm("remove_photo")
 def photo_remove(request, pk):
     photo = get_object_or_404(Photo.objects.select_related("ticket"), pk=pk)
-    remove_photo(photo, request.user)
+    if not photo.removed_at:
+        remove_photo(photo, request.user)
+        record(request, "photo", f"Removed {photo.label} from {photo.ticket.code}",
+               reverse("ticket_detail", args=[photo.ticket.number]))
     messages.success(request, "Photo removed from the ticket. It is kept and the removal is logged.")
     return redirect("ticket_detail", number=photo.ticket.number)
 
@@ -269,8 +390,51 @@ def open_tickets(request):
             "severities": Ticket.Severity.choices,
             "item_types": ItemType.objects.all(),
             "filter_query": urlencode({k: v for k, v in filters.items() if v}),
+            "bulk_form": BulkTicketForm() if request.user.can("bulk_edit_tickets") else None,
         },
     )
+
+
+@require_POST
+@require_perm("bulk_edit_tickets")
+def bulk_tickets(request):
+    """Change status/severity/fault type of many tickets at once, and/or add the same comment to them all."""
+    back = request.POST.get("next", "")
+    if not url_has_allowed_host_and_scheme(back, {request.get_host()}) or not back.startswith("/"):
+        back = reverse("open_tickets")
+    form = BulkTicketForm(request.POST)
+    numbers = [n for n in request.POST.getlist("tickets") if n.isdigit()]
+    if not numbers:
+        messages.error(request, "Tick at least one ticket first.")
+        return redirect(back)
+    if not form.is_valid():
+        messages.error(request, " ".join(e for errs in form.errors.values() for e in errs))
+        return redirect(back)
+    data = {f: form.cleaned_data[f] for f in ("status", "severity", "fault_type") if form.cleaned_data.get(f)}
+    comment = form.cleaned_data.get("comment", "").strip()
+    saved, skipped = [], []
+    for ticket in Ticket.objects.filter(number__in=numbers).order_by("number"):
+        try:
+            _, changed = update_ticket(ticket, request.user, data, ticket.version) if data else (ticket, [])
+        except (ConflictError, PermissionDenied) as exc:
+            skipped.append(f"{ticket.code} ({exc or 'someone else was saving it'})")
+            continue
+        if comment:
+            Comment.objects.create(ticket=ticket, user=request.user, text=comment[:5000])
+            Ticket.objects.filter(pk=ticket.pk).update(updated_at=timezone.now())
+        if changed or comment:
+            saved.append(ticket.code)
+    what = [f"{Ticket.TRACKED_FIELDS[f]} → {Ticket(**{f: v}).display_value(f, v)}" for f, v in data.items()]
+    if comment:
+        what.append(f"comment: {comment[:200]}")
+    if saved:
+        record(request, "bulk", f"Bulk change to {len(saved)} tickets ({', '.join(saved)}): {'; '.join(what)}")
+        messages.success(request, f"Updated {len(saved)} ticket{'s' if len(saved) != 1 else ''}.")
+    else:
+        messages.info(request, "Nothing changed: the ticked tickets already had those values.")
+    if skipped:
+        messages.warning(request, "Not changed: " + ", ".join(skipped))
+    return redirect(back)
 
 
 # ---------------------------------------------------------------- item types
@@ -287,7 +451,11 @@ def item_type_edit(request, pk=None):
     item_type = get_object_or_404(ItemType, pk=pk) if pk else None
     form = ItemTypeForm(request.POST or None, instance=item_type)
     if request.method == "POST" and form.is_valid():
+        changed = form.changed_data
         saved = form.save()
+        if changed or not item_type:
+            record(request, "item_type", f"{'Edited' if item_type else 'Added'} item type {saved}"
+                   + (f": {', '.join(changed)}" if item_type else ""))
         messages.success(request, f"Item type {saved} saved.")
         return redirect("item_type_list")
     title = f"Edit {item_type}" if item_type else "New item type"
@@ -301,7 +469,13 @@ def item_type_edit(request, pk=None):
 def reports(request):
     from django.http import HttpResponse
 
-    from .reports import ReportForm, build_pdf, build_xlsx, describe_filters, filter_tickets
+    from .reports import (
+        ReportForm,
+        build_pdf,
+        build_xlsx,
+        describe_filters,
+        filter_tickets,
+    )
 
     submitted = "action" in request.GET
     form = ReportForm(request.GET if submitted else None)
@@ -311,6 +485,10 @@ def reports(request):
         tickets = filter_tickets(data)
         action = request.GET.get("action")
         stamp = timezone.localtime().strftime("%Y-%m-%d_%H%M")
+        if action in ("xlsx", "pdf", "labels"):
+            kind = {"xlsx": "spreadsheet", "pdf": "PDF report", "labels": "sticker sheet"}[action]
+            record(request, "export", f"Downloaded a {kind} of {tickets.count()} tickets ("
+                   + "; ".join(f"{label}: {value}" for label, value in describe_filters(data)) + ")")
         if action == "xlsx":
             response = HttpResponse(
                 build_xlsx(tickets, data),
@@ -338,6 +516,8 @@ def reports(request):
         ctx.update({
             "results": True,
             "count": tickets.count(),
+            "total_cost": tickets.aggregate(s=Sum("repair_cost"))["s"],
+            "bulk_form": BulkTicketForm() if request.user.can("bulk_edit_tickets") else None,
             "tickets": tickets[:200],
             "filters": describe_filters(data),
             "query": request.GET.urlencode(),
@@ -359,6 +539,6 @@ def health(request):
                     "UPDATE django_migrations SET app = app WHERE id = (SELECT MIN(id) FROM django_migrations)"
                 )
             transaction.set_rollback(True)
-    except Exception as exc:  # noqa: BLE001 - report any database problem
+    except Exception as exc:
         return HttpResponse(f"database error: {exc}", status=503, content_type="text/plain")
     return HttpResponse("ok", content_type="text/plain")

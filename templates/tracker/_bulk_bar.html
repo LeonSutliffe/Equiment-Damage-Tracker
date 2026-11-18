@@ -1,0 +1,14 @@
+{% if bulk_form %}
+<form method="post" action="{% url 'bulk_tickets' %}" id="bulk-form" class="card bulk-bar" data-bulk>{% csrf_token %}
+  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <div class="bulk-head">
+    <label class="check"><input type="checkbox" data-bulk-all> Select all on this page</label>
+    <span class="muted small" data-bulk-count>0 selected</span>
+  </div>
+  <div class="bulk-fields">
+    {{ bulk_form.status }} {{ bulk_form.severity }} {{ bulk_form.fault_type }}
+    {{ bulk_form.comment }}
+    <button type="submit" class="btn primary" data-confirm="Apply this change to every ticked ticket?">Apply to selected</button>
+  </div>
+</form>
+{% endif %}

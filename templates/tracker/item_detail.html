@@ -1,6 +1,18 @@
 {% extends "base.html" %}
 {% block title %}{{ item }}{% endblock %}
 {% block content %}
+{% if item.is_written_off %}
+<div class="flash flash-warning" data-history="{% url 'item_history' item.pk 'write_off' %}">
+  <strong>Written off</strong> on {{ item.written_off_at|date:"j M Y" }}{% if item.written_off_by %} by {{ item.written_off_by.label }}{% endif %}.
+  {% if item.write_off_reason %}Reason: {{ item.write_off_reason }}{% endif %}
+  New faults can't be logged on this item.
+  {% if perms_ok.write_off_item %}
+  <form method="post" action="{% url 'item_reinstate' item.pk %}" class="inline">{% csrf_token %}
+    <button class="btn small" data-confirm="Put this item back in use?">Put back in use</button>
+  </form>
+  {% endif %}
+</div>
+{% endif %}
 <div class="card">
   <h1 data-history="{% url 'item_history' item.pk 'item_type' %}">{{ item.item_type }}</h1>
   <p class="ids">
@@ -9,10 +21,14 @@
   </p>
   {% if item.notes %}<p data-history="{% url 'item_history' item.pk 'notes' %}">{{ item.notes|linebreaksbr }}</p>{% endif %}
   <p class="muted small">Press and hold (or right-click) a value to see its history.</p>
-  {% if perms_ok.edit_item %}<a class="btn" href="{% url 'item_edit' item.pk %}">Edit item</a>{% endif %}
+  <div class="btn-row">
+    <a class="btn" href="{% url 'item_timeline' item.pk %}">Item history</a>
+    {% if perms_ok.edit_item %}<a class="btn" href="{% url 'item_edit' item.pk %}">Edit item</a>{% endif %}
+    {% if perms_ok.write_off_item and not item.is_written_off %}<a class="btn danger-outline" href="{% url 'item_write_off' item.pk %}">Write off</a>{% endif %}
+  </div>
 </div>
 
-{% if perms_ok.create_ticket %}<a class="btn primary wide" href="{% url 'ticket_create' item.pk %}">+ Start new ticket</a>{% endif %}
+{% if perms_ok.create_ticket and not item.is_written_off %}<a class="btn primary wide" href="{% url 'ticket_create' item.pk %}">+ Start new ticket</a>{% endif %}
 
 <h2>Tickets</h2>
 <ul class="pick-list">

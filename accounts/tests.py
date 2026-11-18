@@ -1,7 +1,7 @@
 from django.test import TestCase, override_settings
 from django.urls import reverse
 
-from .models import PermissionChange, Permission, Role, User
+from .models import Permission, PermissionChange, Role, User
 
 
 @override_settings(SECURE_SSL_REDIRECT=False, LOGIN_MAX_FAILURES=3)
@@ -13,7 +13,8 @@ class AccountTests(TestCase):
         self.user = User.objects.create_user("jsmith", password="pw-123456!", role=self.user_role)
 
     def test_default_roles(self):
-        self.assertEqual(len(self.admin_role.permission_codes()), 13)
+        from .models import PERMISSION_CODES
+        self.assertEqual(self.admin_role.permission_codes(), set(PERMISSION_CODES))
         self.assertEqual(
             self.user_role.permission_codes(),
             {"view", "create_item", "create_ticket", "edit_ticket", "resolve_ticket", "reopen_ticket"},

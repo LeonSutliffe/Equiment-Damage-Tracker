@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Audit log{% endblock %}
+{% block content %}
+<h1>Audit log</h1>
+<p class="muted small">Every login, logout and change, newest first. Each ticket and item field also keeps its own detailed history (press and hold a field).</p>
+<form method="get" class="filters">
+  <select name="user" aria-label="Person"><option value="">Everyone</option>{% for u in users %}<option value="{{ u.pk }}"{% if filters.user == u.pk|stringformat:"s" %} selected{% endif %}>{{ u.label }}</option>{% endfor %}</select>
+  <select name="kind" aria-label="Type"><option value="">All types</option>{% for v, l in kinds %}<option value="{{ v }}"{% if filters.kind == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+  <input type="date" name="date" value="{{ filters.date }}" aria-label="Date">
+  <input type="search" name="q" value="{{ filters.q }}" placeholder="Contains text, e.g. T-00012" aria-label="Contains text">
+  <button class="btn">Filter</button>
+</form>
+<table class="list">
+  <thead><tr><th>When</th><th>Who</th><th>Type</th><th>What</th><th>From</th></tr></thead>
+  <tbody>
+  {% for e in page %}
+    <tr>
+      <td>{{ e.at|date:"j M Y H:i:s" }}</td>
+      <td>{% if e.user %}{{ e.user.label }}{% else %}{{ e.username|default:"—" }}{% endif %}</td>
+      <td><span class="badge{% if e.kind == 'login_failed' %} sev-high{% endif %}">{{ e.get_kind_display }}</span></td>
+      <td>{% if e.link %}<a href="{{ e.link }}">{{ e.text }}</a>{% else %}{{ e.text }}{% endif %}</td>
+      <td class="muted small">{{ e.ip }}</td>
+    </tr>
+  {% empty %}<tr><td colspan="5">Nothing logged yet.</td></tr>{% endfor %}
+  </tbody>
+</table>
+{% include "_pager.html" with extra=filter_query %}
+{% endblock %}

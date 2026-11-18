@@ -3,13 +3,15 @@ from django.contrib.auth import login as auth_login
 from django.contrib.auth import logout as auth_logout
 from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.decorators import login_not_required
+from django.core.paginator import Paginator
 from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
-from django.views.decorators.http import require_POST
 from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.http import require_POST
 
+from .audit import record
 from .forms import LoginForm, PasswordResetForm, RoleForm, UserCreateForm, UserEditForm
-from .models import PermissionChange, Role, User
+from .models import AuditEvent, PermissionChange, Role, User
 from .permissions import LockoutError, admin_remains, require_perm
 
 
@@ -35,6 +37,7 @@ def logout_view(request):
 
 def _log(request, target, change):
     PermissionChange.objects.create(changed_by=request.user, target=target, change=change)
+    record(request, "accounts", f"{target[:1].upper()}{target[1:]}: {change}")
 
 
 # ---------------------------------------------------------------- users
@@ -143,3 +146,29 @@ def role_edit(request, pk=None):
 def permission_log(request):
     changes = PermissionChange.objects.select_related("changed_by")[:500]
     return render(request, "accounts/permission_log.html", {"changes": changes})
+
+
+@require_perm("view_audit_log")
+def audit_log(request):
+    events = AuditEvent.objects.select_related("user")
+    filters = {k: request.GET.get(k, "").strip() for k in ("user", "kind", "q", "date")}
+    if filters["user"].isdigit():
+        events = events.filter(user_id=filters["user"])
+    if filters["kind"] in AuditEvent.Kind.values:
+        events = events.filter(kind=filters["kind"])
+    if filters["q"]:
+        events = events.filter(text__icontains=filters["q"])
+    if filters["date"]:
+        from django.utils.dateparse import parse_date
+
+        day = parse_date(filters["date"])
+        if day:
+            events = events.filter(at__date=day)
+    page = Paginator(events, 100).get_page(request.GET.get("page"))
+    from django.utils.http import urlencode
+
+    return render(request, "accounts/audit_log.html", {
+        "page": page, "filters": filters, "kinds": AuditEvent.Kind.choices,
+        "users": User.objects.order_by("username"),
+        "filter_query": urlencode({k: v for k, v in filters.items() if v}),
+    })

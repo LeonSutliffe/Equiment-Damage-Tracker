@@ -3,6 +3,7 @@ from django.conf import settings
 from django.contrib.auth import authenticate, password_validation
 from django.utils import timezone
 
+from .audit import record
 from .models import Permission, Role, User
 
 
@@ -22,6 +23,8 @@ class LoginForm(forms.Form):
             return self.cleaned_data
         account = User.objects.filter(username__iexact=username).first()
         if account and account.is_locked():
+            record(self.request, "login_failed", "Login refused: account is locked", user=account,
+                   username=account.username)
             raise forms.ValidationError(
                 "This account is locked after too many wrong passwords. Try again later or ask an admin."
             )
@@ -32,6 +35,9 @@ class LoginForm(forms.Form):
                 if account.failed_logins >= settings.LOGIN_MAX_FAILURES:
                     account.locked_until = timezone.now() + timezone.timedelta(minutes=settings.LOGIN_LOCKOUT_MINUTES)
                     account.failed_logins = 0
+                    record(self.request, "login_failed",
+                           f"Account locked for {settings.LOGIN_LOCKOUT_MINUTES} minutes after too many wrong passwords",
+                           user=account, username=account.username)
                 account.save(update_fields=["failed_logins", "locked_until"])
             raise forms.ValidationError("Wrong username or password.")
         if user.failed_logins or user.locked_until:

@@ -7,6 +7,11 @@
     <option value="">All item types</option>
     {% for t in item_types %}<option value="{{ t.pk }}"{% if type_id == t.pk|stringformat:"s" %} selected{% endif %}>{{ t.name }}</option>{% endfor %}
   </select>
+  <select name="state" onchange="this.form.submit()" aria-label="In use or written off">
+    <option value="in_use"{% if state == "in_use" %} selected{% endif %}>In use</option>
+    <option value="written_off"{% if state == "written_off" %} selected{% endif %}>Written off</option>
+    <option value="all"{% if state == "all" %} selected{% endif %}>All items</option>
+  </select>
   <noscript><button class="btn">Filter</button></noscript>
 </form>
 <table class="list">
@@ -14,11 +19,11 @@
   <tbody>
   {% for item in page %}
     <tr class="row-link" data-href="{% url 'item_detail' item.pk %}">
-      <td><a href="{% url 'item_detail' item.pk %}">{{ item.item_type }}</a></td><td>{{ item.barcode }}</td><td>{{ item.serial_number }}</td>
+      <td><a href="{% url 'item_detail' item.pk %}">{{ item.item_type }}</a>{% if item.is_written_off %} <span class="badge writeoff">Written off</span>{% endif %}</td><td>{{ item.barcode }}</td><td>{{ item.serial_number }}</td>
       <td>{% if item.open_tickets %}<span class="badge open">{{ item.open_tickets }}</span>{% endif %}</td><td>{{ item.all_tickets }}</td>
     </tr>
   {% empty %}<tr><td colspan="5">No items yet.</td></tr>{% endfor %}
   </tbody>
 </table>
-{% include "_pager.html" with extra="type="|add:type_id %}
+{% include "_pager.html" with extra=filter_query %}
 {% endblock %}

@@ -147,4 +147,24 @@
     form.dataset.submitting = "1";
     form.querySelectorAll("button[type=submit]").forEach(function (b) { b.setAttribute("aria-busy", "true"); });
   });
+  // Bulk actions: "select all" and a count of ticked tickets.
+  document.querySelectorAll("[data-bulk]").forEach(function (bar) {
+    var boxes = function () { return document.querySelectorAll('input[name="tickets"][form="bulk-form"]'); };
+    var all = bar.querySelector("[data-bulk-all]");
+    var count = bar.querySelector("[data-bulk-count]");
+    function update() {
+      var n = 0;
+      boxes().forEach(function (b) { if (b.checked) n++; });
+      count.textContent = n + " selected";
+      all.checked = n > 0 && n === boxes().length;
+    }
+    all.addEventListener("change", function () {
+      boxes().forEach(function (b) { b.checked = all.checked; });
+      update();
+    });
+    document.addEventListener("change", function (e) {
+      if (e.target.matches && e.target.matches('input[name="tickets"]')) update();
+    });
+    update();
+  });
 })();

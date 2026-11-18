@@ -223,7 +223,7 @@ class ReportTests(TestCase):
         self.assertIn("attachment", r["Content-Disposition"])
         wb = load_workbook(BytesIO(r.content))
         ws = wb["Tickets"]
-        self.assertEqual(ws.max_row, 3)
+        self.assertEqual(ws.max_row, 5)  # header, 2 tickets, blank row, total repair cost
         self.assertEqual(ws["A2"].value, self.t2.code)  # oldest first
         self.assertEqual(len(ws._images), 2)
 
@@ -350,10 +350,11 @@ class LabelTests(TestCase):
         two = build_labels_pdf(tickets)
         filled = build_labels_pdf(tickets[:3], fill_templates=True, template_severity="high")
         offset = build_labels_pdf(tickets[:3], start_at=64)  # 64, 65, then next sheet
-        from fpdf import FPDF  # noqa: F401
         import re
 
-        count = lambda b: len(re.findall(rb"/Type /Page\b(?!s)", b))  # noqa: E731
+        from fpdf import FPDF  # noqa: F401
+
+        count = lambda b: len(re.findall(rb"/Type /Page\b(?!s)", b))
         self.assertEqual((count(one), count(two), count(filled), count(offset)), (1, 2, 1, 2))
 
 
@@ -370,3 +371,148 @@ class HealthTests(TestCase):
             r = self.client.get("/health/")
         self.assertEqual(r.status_code, 503)
         self.assertIn(b"unable to open", r.content)
+
+
+@override_settings(PHOTOS_DIR=Path(TMP_PHOTOS), SECURE_SSL_REDIRECT=False)
+class NewFeatureTests(TestCase):
+    def setUp(self):
+        from accounts.models import AuditEvent
+
+        self.AuditEvent = AuditEvent
+        self.user = User.objects.create_user("jsmith", password="pw", role=Role.objects.get(name="User"))
+        self.admin = User.objects.create_user("leon", password="pw", role=Role.objects.get(name="Admin"))
+        ladder = ItemType.objects.create(name="Step ladder 3m")
+        self.item = Item.objects.create(item_type=ladder, barcode="501", serial_number="LD-1")
+        self.client.force_login(self.admin)
+
+    def ticket(self, **kw):
+        return create_ticket(self.item, self.admin, {"fault_type": "safety", "severity": "high"} | kw)
+
+    # ---- duplicate warning
+    def test_duplicate_warning_lists_open_tickets(self):
+        r = self.client.get(reverse("ticket_create", args=[self.item.pk]))
+        self.assertNotContains(r, "already has")
+        t = self.ticket(fault_description="Rung cracked")
+        resolved = self.ticket()
+        update_ticket(resolved, self.admin, {"status": "resolved"}, expected_version=1)
+        r = self.client.get(reverse("ticket_create", args=[self.item.pk]))
+        self.assertContains(r, "already has 1 open ticket")
+        self.assertContains(r, t.code)
+        self.assertNotContains(r, resolved.code)
+
+    # ---- repair costs
+    def test_repair_cost_saved_logged_and_totalled(self):
+        t = self.ticket(repair_cost="12.5")
+        self.assertEqual(FieldChange.objects.get(ticket=t, field="repair_cost").new_value, "12.5")
+        r = self.client.post(reverse("ticket_detail", args=[t.number]), {
+            "version": 1, "status": "in_progress", "fault_type": "safety", "severity": "high",
+            "repair_cost": "30.25"})
+        self.assertEqual(r.status_code, 302)
+        t.refresh_from_db()
+        self.assertEqual(str(t.repair_cost), "30.25")
+        r = self.client.get(reverse("ticket_history", args=[t.number, "repair_cost"]))
+        self.assertContains(r, "£30.25")
+        self.ticket(repair_cost="10")
+        r = self.client.get(reverse("reports"), {"action": "view"})
+        self.assertEqual(str(r.context["total_cost"]), "40.25")
+        self.assertContains(r, "£40.25")
+        r = self.client.get(reverse("reports"), {"action": "xlsx"})
+        from openpyxl import load_workbook
+
+        ws = load_workbook(BytesIO(r.content))["Tickets"]
+        col = [c.value for c in ws[1]].index("Repair cost") + 1
+        self.assertTrue(str(ws.cell(row=5, column=col).value).startswith("=SUM("))
+        self.assertEqual(self.client.get(reverse("reports"), {"action": "pdf"}).status_code, 200)
+
+    def test_negative_cost_rejected(self):
+        t = self.ticket()
+        r = self.client.post(reverse("ticket_detail", args=[t.number]), {
+            "version": 1, "status": "open", "fault_type": "safety", "severity": "high", "repair_cost": "-5"})
+        self.assertEqual(r.status_code, 200)
+        t.refresh_from_db()
+        self.assertIsNone(t.repair_cost)
+
+    # ---- write-off
+    def test_write_off_and_reinstate(self):
+        url = reverse("item_write_off", args=[self.item.pk])
+        self.client.force_login(self.user)
+        self.assertEqual(self.client.get(url).status_code, 403)
+        self.client.force_login(self.admin)
+        r = self.client.post(url, {"reason": "Beyond repair"})
+        self.assertRedirects(r, reverse("item_detail", args=[self.item.pk]))
+        self.item.refresh_from_db()
+        self.assertTrue(self.item.is_written_off)
+        self.assertEqual(self.item.written_off_by, self.admin)
+        # No new tickets, hidden from the default item list, still findable.
+        r = self.client.get(reverse("ticket_create", args=[self.item.pk]))
+        self.assertRedirects(r, reverse("item_detail", args=[self.item.pk]))
+        self.assertNotContains(self.client.get(reverse("item_list")), "LD-1")
+        self.assertContains(self.client.get(reverse("item_list"), {"state": "written_off"}), "LD-1")
+        self.assertRedirects(self.client.get(reverse("home"), {"q": "501"}), reverse("item_detail", args=[self.item.pk]))
+        r = self.client.get(reverse("item_history", args=[self.item.pk, "write_off"]))
+        self.assertContains(r, "Beyond repair")
+        self.assertContains(self.client.get(reverse("item_history", args=[self.item.pk, "barcode"])), "Barcode history")
+        self.client.post(reverse("item_reinstate", args=[self.item.pk]))
+        self.item.refresh_from_db()
+        self.assertFalse(self.item.is_written_off)
+        self.assertEqual(ItemChange.objects.filter(item=self.item, field="write_off").count(), 2)
+
+    # ---- item history page
+    def test_item_history_page(self):
+        t = self.ticket(fault_description="Rung cracked", repair_cost="15")
+        update_ticket(t, self.admin, {"status": "resolved", "work_done": "New rung"}, expected_version=1)
+        self.client.post(reverse("comment_add", args=[t.number]), {"text": "Checked again"})
+        self.ticket(fault_type="cosmetic")
+        self.client.force_login(self.user)
+        r = self.client.get(reverse("item_timeline", args=[self.item.pk]))
+        self.assertEqual(r.status_code, 200)
+        for text in ("Rung cracked", "Status changed from Open to Resolved", "Work Done: New rung", "Checked again",
+                     "Safety × 1", "Cosmetic × 1", "£15.00", "Item added"):
+            self.assertContains(r, text, msg_prefix=text)
+        self.assertEqual(r.context["summary"]["tickets"], 2)
+        self.assertEqual(r.context["summary"]["open"], 1)
+
+    # ---- audit log
+    def test_audit_log_records_logins_and_changes(self):
+        self.client.logout()
+        self.AuditEvent.objects.all().delete()
+        self.client.post(reverse("login"), {"username": "jsmith", "password": "wrong"})
+        self.client.post(reverse("login"), {"username": "jsmith", "password": "pw"})
+        self.client.post(reverse("logout"))
+        kinds = list(self.AuditEvent.objects.order_by("id").values_list("kind", flat=True))
+        self.assertEqual(kinds, ["login_failed", "login", "logout"])
+        self.client.force_login(self.admin)
+        self.client.post(reverse("ticket_create", args=[self.item.pk]), {"fault_type": "safety", "severity": "high"})
+        t = Ticket.objects.get()
+        self.client.post(reverse("ticket_detail", args=[t.number]), {
+            "version": 1, "status": "resolved", "fault_type": "safety", "severity": "high"})
+        texts = list(self.AuditEvent.objects.filter(kind="ticket").values_list("text", flat=True))
+        self.assertTrue(any("Opened T-00001" in x for x in texts))
+        self.assertTrue(any("Status: Open → Resolved" in x for x in texts))
+        r = self.client.get(reverse("audit_log"))
+        self.assertContains(r, "Wrong password")
+        self.client.force_login(self.user)
+        self.assertEqual(self.client.get(reverse("audit_log")).status_code, 403)
+
+    # ---- bulk actions
+    def test_bulk_change_and_comment(self):
+        a, b, c = self.ticket(), self.ticket(), self.ticket()
+        url = reverse("bulk_tickets")
+        self.client.force_login(self.user)
+        self.assertEqual(self.client.post(url, {"tickets": [a.number], "status": "resolved"}).status_code, 403)
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(reverse("open_tickets")), 'id="bulk-form"')
+        r = self.client.post(url, {"tickets": [a.number, b.number], "status": "resolved", "comment": "Batch fixed",
+                                   "next": reverse("open_tickets")})
+        self.assertRedirects(r, reverse("open_tickets"))
+        statuses = dict(Ticket.objects.values_list("number", "status"))
+        self.assertEqual((statuses[a.number], statuses[b.number], statuses[c.number]), ("resolved", "resolved", "open"))
+        self.assertEqual(FieldChange.objects.filter(field="status", new_value="resolved").count(), 2)
+        self.assertEqual(a.comments.get().text, "Batch fixed")
+        self.assertTrue(self.AuditEvent.objects.filter(kind="bulk", text__contains=a.code).exists())
+        # Nothing chosen: refused with a message, nothing changes.
+        r = self.client.post(url, {"tickets": [c.number]}, follow=True)
+        self.assertContains(r, "Choose something to change")
+        # An outside "next" address is ignored.
+        r = self.client.post(url, {"tickets": [c.number], "severity": "low", "next": "https://evil.example/"})
+        self.assertRedirects(r, reverse("open_tickets"))
