@@ -10,7 +10,7 @@ Everything lives in `C:\DamageTracker`. Allow about 30 minutes.
 ## 1. Prepare the PC
 
 1. **Fixed address.** Ask whoever runs the router to give this PC a fixed IP address (a DHCP reservation).
-2. **A name staff can type.** Pick one, for example `faults.local`, and ask for a DNS entry on the router pointing it at the PC's IP address. If that isn't possible, staff can use the PC's own name (shown in *Settings → System → About*); the install script sets that name up too.
+2. **A name staff can type.** Pick one, for example `faults.local`, and ask for a DNS entry on the router pointing it at the PC's IP address. If that isn't possible, use the PC's fixed IP address as the name (e.g. `-HostName 192.168.1.50`). The PC's own name is also added if it has no underscores.
 3. **Stay awake.** *Settings → System → Power*: set *Sleep* to *Never*. In *Windows Update → Advanced options → Active hours*, set your working hours so it doesn't restart mid-check.
 4. **Private network.** *Settings → Network & internet → (your connection) → Properties*: set the network profile to **Private**.
 
