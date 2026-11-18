@@ -1,252 +1,254 @@
 # Equipment Damage Tracker: Architecture
 
-**Status:** Draft for review. No code yet.
+**Status:** Draft v2 for review. No code yet.
 **Last updated:** 2026-11-18
 
 ## 1. Purpose
 
-Staff need a quick, reliable way to record damage to stock items at work, attach photo evidence, and follow each case through to a resolution (repair, write-off, supplier claim, and so on). Managers need to see what is damaged, where, how much it costs, and whether damage is trending up.
-
-The system replaces ad-hoc methods (paper forms, chat photos, spreadsheets) with a single record per incident that is searchable and auditable.
+Once a year, staff check the site's equipment and stock items. Today the faults they find are recorded informally. This program gives them one place to log every fault found during the check, with photos, and to follow each fault until it is dealt with (repaired, replaced, written off).
 
 ### Goals
 
-- Log a damage report in under a minute from a phone on the shop or warehouse floor.
-- Attach photos at the time of logging.
-- Look up an item by barcode/SKU, or by searching its name.
-- Track each report from "reported" to "closed" with a clear owner.
-- Produce simple reports: damage by item, location, cause, cost and period. Export to CSV.
-- Keep a full history of who changed what and when.
+- Log a fault in under a minute from a phone or PC while walking the site.
+- Attach one or more photos to each fault.
+- Group faults by the yearly check they were found in, so each year can be reviewed and compared.
+- Track each fault from "found" to "closed".
+- Simple reports and CSV export: faults per check, per item type, per location, still open.
+- Keep a history of who changed what and when.
 
-### Non-goals (for the first version)
+### Non-goals (for now)
 
-- Full inventory or stock-level management. The tracker reads item data; it is not the system of record for stock counts.
-- Accounting or purchase-order integration.
-- Native iOS/Android app-store apps.
+- Integration with the stock system. Item types are created by hand. (A CSV import from the stock system's barcode and name export can be added later.)
+- Email, Microsoft 365 or single sign-on. Users log in with a name and password.
+- Offline use. Every area has signal.
+- Hosting on the internet. The program runs on one Windows machine on the work network.
 
-## 2. Assumptions
+## 2. Confirmed requirements
 
-Requirements are still thin, so the design rests on these assumptions. Each one is also listed as a question in section 11.
+From Leon, 2026-11-18:
+
+| Topic | Answer |
+|-------|--------|
+| Sites | One site. |
+| Users | Up to about 5 at the same time. |
+| Volume | Low. Mostly during the yearly equipment check. |
+| Use case | Log every fault found during the yearly check, with photos. |
+| Items | Item types created manually in the program for now. Stock system can export barcodes and names (later). |
+| Connectivity | Signal everywhere, so no offline mode. |
+| Hosting | A local Windows machine at work. Users open a web page from their browser. |
+| Login | Username and password stored in the program. Not tied to email or Microsoft 365. |
+
+## 3. Assumptions still to confirm
 
 | # | Assumption |
 |---|------------|
-| A1 | One organisation, one to a handful of sites (stores, warehouses). Tens of users, not thousands. |
-| A2 | Hundreds to low thousands of damage reports per year, with 1 to 5 photos each. |
-| A3 | Staff use their own or company phones; managers also use a desktop browser. |
-| A4 | Items have a SKU and usually a barcode. An item list can be imported from a CSV export of the existing stock system. |
-| A5 | Damage may affect a single unit or a quantity of the same SKU. |
-| A6 | The network on the floor is usually available but can drop out (back of warehouse, cold rooms). |
-| A7 | No hard regulatory requirement, but records should be kept and not silently deleted. |
-| A8 | Small budget and a small (possibly one-person) team will build and run it. |
+| A1 | Users reach the program over the work Wi-Fi/network from phones, tablets and PCs. It is not reachable from outside the site. |
+| A2 | The check records **faults only**, not a pass/fail line for every item checked. (See Q1.) |
+| A3 | A fault can be logged against an item type, with an optional identifier for the specific unit (asset tag, serial number or barcode) and where it is. |
+| A4 | There are two kinds of user: normal users and an admin. (See Q2.) |
+| A5 | The Windows machine is left on during working hours and is backed up. |
 
-## 3. Users and roles
+## 4. Users and roles
 
-| Role | Who | Can do |
-|------|-----|--------|
-| **Reporter** | Floor staff, receiving staff | Log damage, add photos, view and comment on their own reports, look up items. |
-| **Reviewer** | Supervisors, team leads | Everything a Reporter can, plus view all reports at their site, assign, change status, set the resolution and cost. |
-| **Manager** | Store or operations managers | Everything a Reviewer can, across all sites, plus reports and exports. |
-| **Admin** | System owner (likely Leon) | Manage users, roles, sites, locations, item catalogue, damage categories and settings. |
+| Role | Can do |
+|------|--------|
+| **User** | Log faults, add photos and comments, view all faults, change status of faults. |
+| **Admin** | Everything a User can, plus manage user accounts, item types, locations, fault categories, start and close yearly checks, reopen closed faults, and export data. |
 
-Permissions are checked on the server for every request, never only in the user interface. Roles are scoped to one or more sites.
+Accounts are created by the Admin (no self sign-up). Passwords are stored hashed, never in plain text. The Admin can reset a password.
 
-## 4. Core workflows
+## 5. Core workflows
 
-### 4.1 Log damage
+### 5.1 Start a yearly check (Admin)
 
-1. Reporter opens the app and taps **Report damage**.
-2. Identifies the item: scan the barcode with the phone camera, type a SKU, or search by name. If the item is not in the catalogue, they can enter a free-text description, and the report is flagged "unknown item" for a Reviewer.
-3. Enters quantity, damage category (e.g. crushed, water, broken, expired, missing parts), severity (minor / moderate / write-off), where it happened (site and location), how it was found (on receipt, in storage, in handling, customer return) and an optional note.
-4. Takes or attaches photos. Photos are resized on the phone before upload.
-5. Submits. The report gets a short human-readable reference (e.g. `DMG-2026-00042`) and status **Reported**. Reviewers for that site are notified.
+The Admin creates a **Check**, e.g. "Annual check 2026", with a start date. While a check is open, every new fault is attached to it automatically. When the check is finished the Admin closes it; faults logged after that are not part of it (they can still be logged as "ad-hoc" faults outside any check).
 
-If the phone is offline, the report and photos are saved on the device and sent automatically when the connection returns (see 6.3).
+### 5.2 Log a fault
 
-### 4.2 Item lookup
+1. User opens the program in their browser and logs in.
+2. Taps **Log fault**.
+3. Picks the **item type** from a searchable list (or, if allowed, creates a new one on the spot; see Q3).
+4. Optionally enters the unit identifier (asset tag / serial / barcode) and quantity affected.
+5. Picks the **location** (e.g. "Workshop", "Store room 2") and a **fault category** (e.g. broken, worn, missing parts, electrical, safety), sets **severity** (minor / needs repair / unsafe, do not use) and writes a short description.
+6. Takes photos with the phone camera or attaches files from the PC.
+7. Saves. The fault gets a reference such as `F-2026-0042` and status **Open**.
 
-- Barcode scan uses the phone camera in the browser.
-- Search matches SKU, barcode and name.
-- An item page shows its details and every damage report against it.
+"Unsafe, do not use" faults are highlighted at the top of the list.
 
-### 4.3 Review and resolution
+### 5.3 Deal with a fault
 
 Status lifecycle:
 
 ```
-Reported ──► Under review ──► Action pending ──► Resolved ──► Closed
-    │              │                                   ▲
-    └──────────────┴──► Rejected (not damage / duplicate) ─┘
+Open ──► In progress ──► Resolved ──► Closed
+  │                                     ▲
+  └──► No action needed ────────────────┘
 ```
 
-- A Reviewer picks up a report (assigns it to themselves or someone else) and moves it to **Under review**.
-- They choose a **resolution type**: repair, return to supplier, supplier/carrier claim, sell as discounted, write off / dispose, or no action.
-- **Action pending** is used while waiting on something outside the system (a supplier credit, a repair).
-- On **Resolved**, the Reviewer records the outcome, estimated loss and any amount recovered.
-- **Closed** locks the report. Only an Admin can reopen it, and the reopening is logged.
-- Every change of status, assignee, or field is written to the audit log. Comments can be added at any stage.
+- **In progress:** someone is dealing with it (repair booked, replacement ordered).
+- **Resolved:** record the outcome (repaired, replaced, written off, other) and an optional cost.
+- **Closed:** locked. Only the Admin can reopen it.
+- Comments can be added at any time. Every change is written to the history.
 
-### 4.4 Reporting
+### 5.4 Review and report
 
-- Dashboard: open reports by status and age, damage this month vs last month, top items, top categories, top locations, total estimated loss and recovered amounts.
-- Filtered list: by date range, site, location, category, status, item, reporter.
-- Export the filtered list to CSV. A printable single-report view (or PDF) for supplier claims, including the photos.
+- **Check summary:** for a chosen check, the number of faults by status, category, severity, location and item type.
+- **Open faults list:** everything not yet closed, oldest first, unsafe items first.
+- **Year-on-year:** faults per check, to see whether things are getting better or worse.
+- **Item type history:** every fault logged against an item type across all years.
+- **Export:** any filtered list to CSV (opens in Excel). A printable fault sheet with photos for a single fault or a whole check.
 
-### 4.5 Administration
+### 5.5 Administration
 
-- Import or update the item catalogue from CSV.
-- Manage sites, locations within sites, damage categories and resolution types (configurable lists, not hard-coded).
-- Invite and deactivate users, assign roles and sites.
+- Create, rename and deactivate item types, locations and fault categories.
+- Create and deactivate user accounts, reset passwords.
+- Start and close checks.
+- Later: import item types from the stock system's CSV export.
 
-## 5. Data model
+## 6. Data model
 
 ```
-Site 1──* Location
-Site 1──* UserSite *──1 User
-Item 1──* DamageReport *──1 Location
-DamageReport 1──* Photo
-DamageReport 1──* Comment
-DamageReport 1──* AuditEvent
-DamageReport *──1 DamageCategory
-DamageReport *──1 ResolutionType (nullable)
+Check 1──* Fault
+ItemType 1──* Fault
+Location 1──* Fault
+FaultCategory 1──* Fault
+Fault 1──* Photo
+Fault 1──* Comment
+Fault 1──* HistoryEntry
+User 1──* Fault (reported_by)
 ```
 
 | Entity | Key fields |
 |--------|-----------|
-| **User** | id, name, email, active, created_at |
-| **UserSite** | user_id, site_id, role (reporter / reviewer / manager / admin) |
-| **Site** | id, name, address |
-| **Location** | id, site_id, name (e.g. "Aisle 4", "Loading bay") |
-| **Item** | id, sku, barcode, name, category, unit_cost, supplier, active |
-| **DamageCategory** | id, name, active |
-| **ResolutionType** | id, name, active |
-| **DamageReport** | id, reference, item_id (nullable), unknown_item_description, quantity, category_id, severity, site_id, location_id, discovered_how, description, status, reported_by, assigned_to, reported_at, resolution_type_id, resolution_notes, estimated_loss, amount_recovered, resolved_at, closed_at, client_id (for offline de-duplication), created_at, updated_at |
-| **Photo** | id, report_id, storage_key, thumbnail_key, content_type, size, width, height, taken_at, uploaded_by, created_at |
-| **Comment** | id, report_id, author_id, body, created_at |
-| **AuditEvent** | id, report_id, actor_id, action, field, old_value, new_value, created_at |
+| **User** | id, username, display_name, password_hash, is_admin, active, created_at |
+| **Check** | id, name, started_on, closed_on, notes |
+| **ItemType** | id, name, description, barcode (optional), active |
+| **Location** | id, name, active |
+| **FaultCategory** | id, name, active |
+| **Fault** | id, reference, check_id (nullable for ad-hoc), item_type_id, unit_identifier, quantity, location_id, category_id, severity, description, status, outcome, cost, reported_by, reported_at, resolved_at, closed_at, updated_at |
+| **Photo** | id, fault_id, file_name, thumbnail_file_name, content_type, size, uploaded_by, created_at |
+| **Comment** | id, fault_id, author_id, body, created_at |
+| **HistoryEntry** | id, fault_id, user_id, action, field, old_value, new_value, created_at |
 
 Notes:
 
-- `unit_cost` on Item is copied to the report as the starting `estimated_loss` (unit_cost × quantity), so later price changes do not rewrite history.
-- Records are never hard-deleted. Reports are closed or rejected; catalogue entries are deactivated.
-- `client_id` is a UUID created on the phone so a report sent twice after a dropped connection is stored once.
+- Nothing is hard-deleted. Faults are closed; item types, locations and users are deactivated.
+- `barcode` on ItemType is optional now, so the stock system's export can be matched later.
+- If a specific unit needs its own history (e.g. "drill #7 has failed three years running"), an **Item** table (one row per physical unit) can be added between ItemType and Fault. Not needed for the first version. See Q4.
 
-## 6. Components
+## 7. Components
+
+Everything runs on the one Windows machine.
 
 ```
-┌────────────────────────────┐
-│  Web app (PWA)             │  phone + desktop browser
-│  - report form, camera,    │
-│    barcode scan            │
-│  - offline queue           │
-│  - dashboard / admin       │
-└─────────────┬──────────────┘
-              │ HTTPS (JSON API)
-┌─────────────▼──────────────┐       ┌──────────────────────┐
-│  API server                │──────►│  Object storage      │
-│  - auth & permissions      │ signed│  (photos, thumbnails)│
-│  - reports, items, users   │  URLs └──────────────────────┘
-│  - status rules, audit log │
-│  - CSV import / export     │       ┌──────────────────────┐
-│  - background jobs         │──────►│  Email (notifications)│
-└─────────────┬──────────────┘       └──────────────────────┘
-              │
-┌─────────────▼──────────────┐
-│  Relational database       │
-└────────────────────────────┘
+ Phones / tablets / PCs on the work network
+            │  browser, http(s)://<server-name>:<port>
+            ▼
+┌─────────────────────────────────────────────┐
+│  Windows machine                            │
+│                                             │
+│  ┌───────────────────────────────────────┐  │
+│  │ Web application (runs as a Windows    │  │
+│  │ service, starts with the machine)     │  │
+│  │  - login and sessions                 │  │
+│  │  - pages: log fault, lists, reports,  │  │
+│  │    admin                              │  │
+│  │  - photo upload, resize, thumbnails   │  │
+│  │  - CSV export, printable sheets       │  │
+│  └───────────┬─────────────────┬─────────┘  │
+│              │                 │            │
+│  ┌───────────▼───────┐  ┌──────▼─────────┐  │
+│  │ Database file      │  │ Photos folder  │  │
+│  │ (SQLite)           │  │ on local disk  │  │
+│  └────────────────────┘  └────────────────┘  │
+│                                             │
+│  Nightly backup ──► network share / USB /   │
+│                     OneDrive folder          │
+└─────────────────────────────────────────────┘
 ```
 
-### 6.1 Web app (Progressive Web App)
+### 7.1 Web application
 
-A single responsive web app, installable to the phone's home screen. It covers both the quick floor workflow (mobile-first) and the manager dashboard (desktop). A PWA avoids app-store publishing while still giving camera access, barcode scanning and offline support.
+A single program that serves the web pages and handles all the logic. Pages are built on the server and kept simple, with large buttons so they work well on a phone. The phone's camera is used through the browser's normal file/photo picker, so no app needs installing.
 
-### 6.2 API server
+### 7.2 Database
 
-A single backend service exposing a JSON API. It owns all business rules: who can see and edit what, which status changes are allowed, writing the audit log, and generating report references. One deployable unit (a "modular monolith") is the right size for the expected load; there is no need for microservices.
+**SQLite**: a single file on disk, no separate database server to install or maintain. It handles 5 concurrent users and this volume with ease. If the program ever moves to a bigger setup, the same data model moves to PostgreSQL or SQL Server.
 
-Main API areas: `/auth`, `/reports`, `/reports/{id}/photos`, `/reports/{id}/comments`, `/items`, `/sites`, `/users`, `/stats`, `/exports`.
+### 7.3 Photos
 
-### 6.3 Photo handling and offline support
+Uploaded photos are resized (e.g. longest edge 2000 px) and saved in a folder on the machine, with a small thumbnail for lists. File names are random IDs, not user-supplied names. Photos are only served to logged-in users.
 
-- The phone resizes photos (e.g. longest edge 2000 px, JPEG) before upload, which keeps uploads fast on poor signal.
-- The API returns a short-lived signed upload URL; the phone uploads straight to object storage, then confirms with the API. A background job makes a thumbnail.
-- Photos are served through short-lived signed URLs, never public links.
-- Offline: drafts and photos are kept in browser storage (IndexedDB) with a sync queue. On reconnect the app sends the report (with its `client_id`) and then the photos. The user sees which reports are "waiting to send".
+### 7.4 Running on Windows
 
-### 6.4 Database
+- The program is installed as a Windows service so it starts automatically when the machine boots and restarts if it crashes.
+- Windows Firewall gets one inbound rule for the program's port, limited to the local network.
+- Staff use a short address such as `http://faults-pc:8000`, or a bookmark / home-screen shortcut.
 
-A relational database. The data is structured and related (items, reports, users, sites), reporting needs grouping and filtering, and the audit log benefits from transactions.
+### 7.5 Backups
 
-### 6.5 Background jobs
+A scheduled task copies the database file and photos folder every night to a second place (a network share, an external drive, or a OneDrive-synced folder), keeping e.g. 30 days of copies. Restore is "stop service, copy files back, start service". This is the most important operational piece, since everything lives on one machine.
 
-Thumbnail generation, notification emails, and large CSV imports/exports run as background jobs so the app stays responsive. At this scale a simple database-backed job queue is enough.
+## 8. Tech stack
 
-### 6.6 Notifications
+### Option A: Python + Django (recommended)
 
-Email (and optionally in-app) notices when: a report is logged at your site (Reviewers), a report is assigned to you, a report you logged is resolved. A daily digest option avoids inbox noise.
+- **Framework:** Django. It includes username/password login, password hashing, sessions, a permission system and a ready-made admin site for managing item types, locations, categories and users.
+- **Pages:** Django templates with a small CSS framework (e.g. Bootstrap or Pico.css) for a mobile-friendly layout; a little HTMX for smoother forms if wanted.
+- **Database:** SQLite (built in).
+- **Photos:** Pillow library for resizing and thumbnails.
+- **Running on Windows:** Waitress (a production web server that works on Windows) wrapped as a Windows service with NSSM or WinSW.
+- **Reports/export:** Python's built-in CSV module; printable pages via the browser's print-to-PDF.
 
-## 7. Tech stack options
+Why: it covers the login, admin and database needs out of the box, so most of the effort goes into the fault screens. It runs well on Windows with no extra servers, and it's easy to read and maintain for one person.
 
-### Option A: TypeScript full stack (recommended)
+### Option B: Node.js + TypeScript
 
-- **Frontend:** React with Vite, as a PWA. Barcode scanning via the browser's BarcodeDetector API with a JavaScript fallback library (e.g. ZXing).
-- **Backend:** Node.js with a typed framework (e.g. Fastify or NestJS) and an ORM with migrations (e.g. Prisma or Drizzle).
-- **Database:** PostgreSQL.
-- **Photos:** S3-compatible object storage (AWS S3, Cloudflare R2, Backblaze B2, or MinIO when self-hosting).
-- **Auth:** Email magic link or password plus optional Microsoft/Google sign-in if the workplace uses it.
-- **Hosting:** A managed platform (e.g. Render, Fly.io, Railway) with managed Postgres, or a single small VM with Docker Compose.
+Express or Fastify with server-rendered pages (or a small React front end), SQLite via Prisma or Drizzle, run as a Windows service. A good fit if you'd rather work in JavaScript, but login, sessions and admin screens all need to be built or assembled from libraries.
 
-Why: one language across the app, strong PWA and camera support, large ecosystem, easy to hire for or get help with.
+### Option C: Microsoft 365 (Power Apps + SharePoint lists)
 
-### Option B: Python / Django
-
-Django gives a ready-made admin site, authentication and ORM, which covers the admin and catalogue screens almost for free. The floor-facing report form could be server-rendered with light JavaScript (e.g. HTMX). Offline support is harder in this model than in a React PWA. A good choice if offline logging turns out not to matter.
-
-### Option C: Low-code / backend-as-a-service
-
-Supabase (Postgres, auth, storage) with a thin frontend, or a tool such as Power Apps / AppSheet if the workplace already uses Microsoft 365 or Google Workspace. Fastest to a first version and least to operate, but less control over offline behaviour, permissions edge cases and long-term cost, and some lock-in.
+Since the workplace has Microsoft 365, a Power App over SharePoint lists could do this without hosting anything. Not recommended here because you'd prefer local logins over Microsoft accounts, and Power Apps licensing and customisation limits can get in the way.
 
 ### Recommendation
 
-**Option A**, deployed as one API service, one Postgres database and one storage bucket on a managed host. It meets the offline and camera needs well, stays cheap at this scale, and has no exotic parts. If Leon's workplace is a Microsoft 365 shop and offline use is rare, Option C (Power Apps) is worth a second look; see question Q9.
+**Option A: Django + SQLite + Waitress, as a Windows service, with nightly backups.** It's the least moving parts for one site and five users, and nothing about it stops a later move to a proper server or the cloud.
 
-## 8. Security and privacy
+## 9. Security
 
-- HTTPS everywhere; secure, HTTP-only session cookies or short-lived tokens.
-- Role and site checks on every API call.
-- Photos in a private bucket, reachable only through signed URLs.
-- Strip GPS and device metadata (EXIF) from photos on upload unless location tracking is wanted.
-- Audit log is append-only from the application's point of view.
-- Daily database backups with tested restore; object storage versioning on the photo bucket.
-- Staff names and emails are the only personal data; no customer data is stored.
+The program is only on the internal network, but it still holds staff logins.
 
-## 9. Non-functional requirements
+- Passwords stored with a strong hash (Django's default PBKDF2 or Argon2). Minimum length enforced. Lock out after repeated failed logins.
+- Every page and photo requires login; admin pages require the admin role.
+- Protection against common web attacks (CSRF, XSS, SQL injection) via the framework defaults.
+- Uploads limited to image types and a maximum size.
+- **HTTPS:** plain HTTP on the local network is the simplest start, but passwords then cross the Wi-Fi unencrypted. Recommended: a self-signed or internal certificate, or a reverse proxy such as Caddy in front of the app. See Q5.
+- Firewall rule restricts access to the local network.
+
+## 10. Non-functional requirements
 
 | Area | Target |
 |------|--------|
-| Speed | Report form ready in under 2 s on a mid-range phone on 4G. |
-| Availability | Business hours; a short maintenance window out of hours is acceptable. |
-| Scale | Comfortably handles 10× the assumed volume without design changes. |
-| Retention | Reports and photos kept for at least 7 years unless told otherwise. |
-| Accessibility | Large touch targets, works one-handed, readable in bright warehouse light. |
-| Browsers | Current Chrome/Safari on iOS and Android; current desktop browsers. |
+| Speed | Pages load in under 2 s on a phone over the site Wi-Fi. |
+| Availability | Working hours, while the Windows machine is on. |
+| Capacity | 5 concurrent users; tens of thousands of photos before disk space needs a look. |
+| Retention | Keep all checks and faults indefinitely unless told otherwise. |
+| Usability | Large touch targets; logging a fault takes at most one screen plus photos. |
+| Browsers | Current Chrome/Safari/Edge on phones and PCs. |
 
-## 10. Delivery plan (suggested)
+## 11. Delivery plan (suggested)
 
-1. **MVP:** login, item catalogue import, log damage with photos, list and detail views, status changes, audit log, CSV export.
-2. **Phase 2:** barcode scanning, offline queue, notifications, dashboard.
-3. **Phase 3:** printable claim pack (PDF), single sign-on, integration with the stock system (automatic catalogue sync, or posting write-offs back).
+1. **MVP:** login, user/item type/location/category admin, start a check, log fault with photos, fault list and detail, status changes, history, CSV export. Install as a Windows service with nightly backup.
+2. **Phase 2:** check summary and year-on-year reports, printable fault sheets, HTTPS.
+3. **Later (optional):** import item types from the stock system's barcode export, barcode scanning, per-unit item history, move to a server or cloud host.
 
-## 11. Open questions for Leon
+## 12. Open questions for Leon
 
-1. **Scale:** How many sites, staff, and damage reports per month do you expect? (A1, A2)
-2. **Items:** Does your stock system export items with SKU and barcode? Which system is it, and could we sync with it later? (A4)
-3. **Devices:** Will staff use their own phones, company phones, or shared tablets/scanners? Do any handheld scanners already exist on site? (A3)
-4. **Connectivity:** Are there areas with no signal or Wi-Fi where damage is found? This decides how important offline mode is. (A6)
-5. **Workflow:** Who decides the outcome of a damage report today, and what outcomes are possible (write-off, supplier claim, repair, discount sale, other)?
-6. **Money:** Should the system track cost and recovered amounts, or only the fact that damage occurred?
-7. **Suppliers/carriers:** Do you file claims with suppliers or delivery carriers? If so, what evidence do they ask for?
-8. **Sign-in:** Does your workplace use Microsoft 365 or Google Workspace accounts that staff could sign in with?
-9. **Platform preference:** Is there an IT policy about where data may be hosted, or a preference for tools already in use (e.g. Microsoft Power Apps, SharePoint)?
-10. **Retention and compliance:** How long must records be kept? Any insurance, health and safety, or audit requirements?
-11. **Reporting:** What reports does management want to see, and how often?
-12. **Who runs it:** Who will host, maintain and pay for the system once built?
+1. **Faults only, or every item?** Should the check record only faults, or a pass/fail line for every item checked (so you can prove an item was checked and was fine)?
+2. **Roles:** Is "normal user + admin" enough, or do you need someone who can view but not edit, or someone who approves outcomes?
+3. **Item types:** Can any user add a new item type while logging a fault, or only the admin?
+4. **Individual units:** Do you need to track specific units (e.g. "ladder #3") over the years, or is the item type plus a free-text identifier enough?
+5. **HTTPS:** Is plain HTTP acceptable on your internal network for now, or should we set up HTTPS from day one?
+6. **Backups:** Where should nightly backups go (network share, external drive, OneDrive folder)?
+7. **The Windows machine:** Is it a normal desktop PC or a server? Is it on all day and is anyone responsible for Windows updates on it?
+8. **After a fault:** What outcomes do you need (repaired, replaced, written off, other)? Do you want to record cost?
