@@ -381,7 +381,7 @@ Not recommended: you'd prefer local logins, and per-field history with a long-pr
 
 ## 9. Security
 
-- Passwords stored with a strong hash. Minimum length enforced. Lock out after repeated failed logins.
+- Passwords stored with a strong hash. No length or complexity rules (Leon's choice: low security needs). Lock out after repeated failed logins.
 - Every page and photo requires login; each action requires the matching permission (section 4).
 - Framework defaults protect against CSRF, XSS and SQL injection.
 - Uploads limited to image types and a maximum size.

@@ -41,8 +41,12 @@
       {% empty %}{% if ticket %}<p class="muted">No photos yet.</p>{% endif %}{% endfor %}
     </div>
     {% if can_edit %}
-      <label class="btn add-photo">+ Add photo {{ form.photos }}</label>
-      <div class="photo-preview" data-preview-for="{{ form.photos.id_for_label }}"></div>
+      <div class="photo-buttons" data-photo-picker>
+        <label class="btn primary add-photo">&#128247; Take photo<input type="file" name="photos" accept="image/*" capture="environment"></label>
+        <label class="btn add-photo">&#128444; From gallery{{ form.photos }}</label>
+      </div>
+      <div class="photo-preview" data-photo-preview></div>
+      <div hidden data-photo-store></div>
     {% endif %}
     {% for e in form.photos.errors %}<div class="error">{{ e }}</div>{% endfor %}
   </div>

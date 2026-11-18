@@ -117,12 +117,9 @@ DATABASES = {
 
 AUTH_USER_MODEL = "accounts.User"
 
-AUTH_PASSWORD_VALIDATORS = [
-    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator", "OPTIONS": {"min_length": 8}},
-    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
-    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
-]
+# No password rules: Leon chose simple passwords over high security (2026-11-18).
+# Any non-blank password is accepted.
+AUTH_PASSWORD_VALIDATORS = []
 
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "home"
@@ -172,4 +169,5 @@ LOGGING = {
     "disable_existing_loggers": False,
     "handlers": {"console": {"class": "logging.StreamHandler"}},
     "root": {"handlers": ["console"], "level": "INFO"},
+    "loggers": {"fontTools": {"level": "WARNING"}, "fpdf": {"level": "WARNING"}},
 }

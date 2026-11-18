@@ -22,6 +22,11 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
 }
 if (-not (Test-Path "$AppDir\manage.py")) { throw "Can't find $AppDir\manage.py. Copy the program to $AppDir first." }
 
+# Underscores aren't allowed in web addresses, so only add the PC's own name if it's valid.
+$pcName = $env:COMPUTERNAME.ToLower()
+if ($pcName -notmatch '^[a-z0-9-]+$') { $pcName = $null }
+$names = @($HostName) + @($pcName | Where-Object { $_ -and $_ -ne $HostName })
+
 $tools = Join-Path $AppDir "tools"
 $nssm  = Join-Path $tools "nssm.exe"
 $caddy = Join-Path $tools "caddy.exe"
@@ -39,10 +44,9 @@ $venvPy = "$AppDir\.venv\Scripts\python.exe"
 Step "Writing settings (faults.env)"
 $envFile = Join-Path $AppDir "faults.env"
 if (-not (Test-Path $envFile)) {
-    $pcName = $env:COMPUTERNAME.ToLower()
     @(
-        "FAULTS_ALLOWED_HOSTS=$HostName,$pcName,localhost,127.0.0.1",
-        "FAULTS_CSRF_TRUSTED_ORIGINS=https://$HostName,https://$pcName",
+        "FAULTS_ALLOWED_HOSTS=$($names -join ','),localhost,127.0.0.1",
+        "FAULTS_CSRF_TRUSTED_ORIGINS=$(($names | ForEach-Object { "https://$_" }) -join ',')",
         "FAULTS_DATA_DIR=$AppDir\data"
     ) | Set-Content -Encoding UTF8 $envFile
     Write-Host "Created $envFile"
@@ -62,14 +66,14 @@ Pop-Location
 Step "Writing Caddy config"
 $caddyFile = Join-Path $AppDir "Caddyfile"
 if (-not (Test-Path $caddyFile)) {
-    $pcName = $env:COMPUTERNAME.ToLower()
     (Get-Content "$AppDir\deploy\windows\Caddyfile" -Raw) `
         -replace "C:/DamageTracker", ($AppDir -replace "\\", "/") `
-        -replace "(?m)^faults\.local \{", "$HostName, $pcName {" |
+        -replace "(?m)^faults\.local \{", "$($names -join ', ') {" |
         Set-Content -Encoding UTF8 $caddyFile
     Write-Host "Created $caddyFile"
 } else { Write-Host "Keeping existing $caddyFile" }
 & $caddy validate --config $caddyFile --adapter caddyfile
+if ($LASTEXITCODE -ne 0) { throw "Caddy didn't accept $caddyFile. Fix it and run this script again." }
 
 Step "Installing Windows services"
 function Install-Service($name, $display, $exe, $arguments) {
@@ -113,4 +117,4 @@ if (Test-Path $rootCert) {
     Write-Warning "Caddy hasn't created its certificate yet. Check $AppDir\logs\DamageTrackerCaddy.log, then run this script again."
 }
 
-Write-Host "`nDone. Open https://$HostName (or https://$($env:COMPUTERNAME.ToLower())) in a browser." -ForegroundColor Green
+Write-Host "`nDone. Open https://$HostName in a browser." -ForegroundColor Green

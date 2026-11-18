@@ -181,3 +181,62 @@ class TrackerTests(TestCase):
             r = self.client.get(url)
             self.assertEqual(r.status_code, 302)
             self.assertIn(reverse("login"), r["Location"])
+
+
+@override_settings(PHOTOS_DIR=Path(TMP_PHOTOS), SECURE_SSL_REDIRECT=False)
+class ReportTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user("leon", password="x", role=Role.objects.get(name="Admin"))
+        self.user = User.objects.create_user("jsmith", password="x", role=Role.objects.get(name="User"))
+        ladder = ItemType.objects.create(name="Step ladder 3m")
+        drill = ItemType.objects.create(name="Drill 18V")
+        self.ladder_item = Item.objects.create(item_type=ladder, barcode="111", serial_number="LD-1")
+        self.drill_item = Item.objects.create(item_type=drill, barcode="222", serial_number="DR-1")
+        self.t1 = create_ticket(self.ladder_item, self.admin, {"fault_type": "safety", "severity": "high",
+                                "fault_description": "Rung cracked – “bad”"}, [jpeg(), jpeg("b.jpg", (600, 900))])
+        self.t2 = create_ticket(self.drill_item, self.admin, {"fault_type": "cosmetic", "severity": "low"})
+        Ticket.objects.filter(pk=self.t2.pk).update(created_at="2025-06-01T10:00:00Z")
+        self.client.force_login(self.admin)
+        self.url = reverse("reports")
+
+    def test_needs_export_permission(self):
+        self.client.force_login(self.user)
+        self.assertEqual(self.client.get(self.url).status_code, 403)
+
+    def test_filters(self):
+        r = self.client.get(self.url, {"action": "view", "severities": ["high"]})
+        self.assertEqual(r.context["count"], 1)
+        r = self.client.get(self.url, {"action": "view", "created_from": "2025-01-01", "created_to": "2025-12-31"})
+        self.assertEqual([t.code for t in r.context["tickets"]], [self.t2.code])
+        r = self.client.get(self.url, {"action": "view", "item_types": [self.ladder_item.item_type_id], "statuses": ["open"]})
+        self.assertEqual(r.context["count"], 1)
+        r = self.client.get(self.url, {"action": "view", "text": "rung"})
+        self.assertEqual(r.context["count"], 1)
+        r = self.client.get(self.url, {"action": "view"})
+        self.assertEqual(r.context["count"], 2)
+
+    def test_xlsx_with_photos(self):
+        from openpyxl import load_workbook
+
+        r = self.client.get(self.url, {"action": "xlsx", "include_photos": "on"})
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("attachment", r["Content-Disposition"])
+        wb = load_workbook(BytesIO(r.content))
+        ws = wb["Tickets"]
+        self.assertEqual(ws.max_row, 3)
+        self.assertEqual(ws["A2"].value, self.t2.code)  # oldest first
+        self.assertEqual(len(ws._images), 2)
+
+    def test_pdf_with_and_without_photos(self):
+        plain = self.client.get(self.url, {"action": "pdf"})
+        photos = self.client.get(self.url, {"action": "pdf", "include_photos": "on"})
+        for r in (plain, photos):
+            self.assertEqual(r["Content-Type"], "application/pdf")
+            self.assertTrue(r.content.startswith(b"%PDF"))
+        self.assertGreater(len(photos.content), len(plain.content) + 5000)
+
+    def test_empty_report(self):
+        r = self.client.get(self.url, {"action": "pdf", "severities": ["medium"]})
+        self.assertTrue(r.content.startswith(b"%PDF"))
+        r = self.client.get(self.url, {"action": "xlsx", "severities": ["medium"]})
+        self.assertEqual(r.status_code, 200)

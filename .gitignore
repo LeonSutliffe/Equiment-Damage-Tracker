@@ -9,3 +9,4 @@ logs/
 caddy/data/
 caddy/config/
 *.sqlite3
+tools/
