@@ -157,6 +157,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 if env_bool("FAULTS_HTTPS", not DEBUG):
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SECURE_SSL_REDIRECT = True
+    SECURE_REDIRECT_EXEMPT = [r"^health/$"]  # local health check from the Windows scripts
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_HSTS_SECONDS = 60 * 60 * 24 * 30

@@ -13,4 +13,6 @@ Push-Location $AppDir
 & $venvPy manage.py collectstatic --noinput | Out-Null
 & $nssm start DamageTrackerWeb
 Pop-Location
-Write-Host "Updated and restarted." -ForegroundColor Green
+. "$AppDir\deploy\windows\protect-data.ps1"
+if (Test-AppHealth) { Write-Host "Updated and restarted. The app can open its database." -ForegroundColor Green }
+else { Write-Warning "The app restarted but can't open its database. Check $AppDir\logs\DamageTrackerWeb.log." }
