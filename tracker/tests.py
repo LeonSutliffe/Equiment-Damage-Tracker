@@ -716,3 +716,17 @@ class ManufacturerTests(TestCase):
         self.assertEqual(ws[2][headers.index("Manufacturer")].value, "Zarges")
         self.assertEqual(ws[2][headers.index("Model name")].value, "Step ladder 3m")
         self.assertEqual(ws[2][headers.index("Item type")].value, "Zarges Step ladder 3m")
+
+
+@override_settings(PHOTOS_DIR=Path(TMP_PHOTOS), SECURE_SSL_REDIRECT=False)
+class CheckMeLabelTests(TestCase):
+    def test_sheet_of_check_me_labels(self):
+        admin = User.objects.create_user("leon", password="pw", role=Role.objects.get(name="Admin"))
+        self.client.force_login(admin)
+        r = self.client.get(reverse("reports"), {"action": "blank_labels", "template_colour": "checkme", "label_start": 1})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r["Content-Type"], "application/pdf")
+        self.assertIn("write-in-labels", r["Content-Disposition"])
+        from .labels import build_labels_pdf
+
+        self.assertGreater(len(build_labels_pdf([], fill_templates=True, template_severity="checkme", start_at=60)), 1000)

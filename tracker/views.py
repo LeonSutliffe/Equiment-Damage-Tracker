@@ -600,6 +600,16 @@ def reports(request):
         tickets = filter_tickets(data)
         action = request.GET.get("action")
         stamp = timezone.localtime().strftime("%Y-%m-%d_%H%M")
+        if action == "blank_labels":
+            from .labels import build_labels_pdf
+
+            colour = data.get("template_colour") or "none"
+            pdf = build_labels_pdf([], fill_templates=True, template_severity=colour,
+                                   start_at=data.get("label_start") or 1, outlines=data.get("label_outlines"))
+            record(request, "export", f"Downloaded a sheet of write-in labels ({colour})")
+            response = HttpResponse(pdf, content_type="application/pdf")
+            response["Content-Disposition"] = f'attachment; filename="write-in-labels_{stamp}.pdf"'
+            return response
         if action in ("xlsx", "pdf", "labels"):
             kind = {"xlsx": "spreadsheet", "pdf": "PDF report", "labels": "sticker sheet"}[action]
             record(request, "export", f"Downloaded a {kind} of {tickets.count()} tickets ("
