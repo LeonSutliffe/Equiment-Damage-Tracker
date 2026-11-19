@@ -12,6 +12,12 @@
         <button type="submit" class="link danger small" data-confirm="Remove “{{ d.title }}”? The file is kept and the removal is logged.">Remove</button>
       </form>
       {% endif %}
+      {% if can_delete_permanently %}
+      <form method="post" action="{% url 'document_delete' d.pk %}" class="inline">{% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}#documents">
+        <button type="submit" class="link danger small" data-confirm="Permanently delete “{{ d.title }}”? The file is erased, it can't be undone, and only the audit log records it.">Delete permanently</button>
+      </form>
+      {% endif %}
     </li>
     {% endfor %}
   </ul>

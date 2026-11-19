@@ -55,6 +55,9 @@
           {% if perms_ok.remove_photo %}
             <button type="submit" class="link danger small" form="remove-{{ p.pk }}" data-confirm="Remove this photo from the ticket? It is kept and the removal is logged.">Remove</button>
           {% endif %}
+          {% if can_delete_permanently %}
+            <button type="submit" class="link danger small" form="delete-photo-{{ p.pk }}" data-confirm="Permanently delete this photo? It can't be undone and won't appear in the ticket history (only in the audit log).">Delete permanently</button>
+          {% endif %}
         </figure>
       {% empty %}{% if ticket %}<p class="muted">No photos yet.</p>{% endif %}{% endfor %}
     </div>
@@ -83,10 +86,38 @@
 <section class="card comments" id="comments">
   <h2>Comments{% if comments %} ({{ comments|length }}){% endif %}</h2>
   {% for c in comments %}
-    <div class="comment">
-      <div class="when">{{ c.created_at|date:"j M Y H:i" }} <span class="who">{{ c.user.label|default:"(deleted user)" }}</span></div>
-      <div class="text">{{ c.text|linebreaksbr }}</div>
+    {% if c.removed_at %}
+    <div class="comment removed" id="comment-{{ c.pk }}">
+      <div class="when muted">Comment by {{ c.user.label|default:"(deleted user)" }} removed by {{ c.removed_by.label|default:"(deleted user)" }} on {{ c.removed_at|date:"j M Y H:i" }}</div>
     </div>
+    {% else %}
+    <div class="comment" id="comment-{{ c.pk }}"{% if c.edited_at %} data-history="{% url 'comment_history' c.pk %}"{% endif %}>
+      <div class="when">{{ c.created_at|date:"j M Y H:i" }} <span class="who">{{ c.user.label|default:"(deleted user)" }}</span>
+        {% if c.edited_at %}<button type="button" class="link small edited" data-history-open title="Show earlier versions">(edited {{ c.edited_at|date:"j M H:i" }})</button>{% endif %}</div>
+      <div class="text">{{ c.text|linebreaksbr }}</div>
+      <div class="comment-actions">
+        {% if can_edit and c.user_id == user.pk %}
+        <details class="comment-edit"><summary class="link small">Edit</summary>
+          <form method="post" action="{% url 'comment_edit' c.pk %}">{% csrf_token %}
+            <label class="sr-only" for="edit-{{ c.pk }}">Edit comment</label>
+            <textarea id="edit-{{ c.pk }}" name="text" rows="2" required>{{ c.text }}</textarea>
+            <button type="submit" class="btn small">Save edit</button>
+            <span class="muted small">The earlier version stays visible in its history.</span>
+          </form>
+        </details>
+        {% endif %}
+        {% if perms_ok.delete_records %}
+        <form method="post" action="{% url 'comment_remove' c.pk %}" class="inline">{% csrf_token %}
+          {% if can_delete_permanently %}
+          <button type="submit" class="link danger small" data-confirm="Permanently delete this comment? It can't be undone and won't appear in the item history (only in the audit log).">Delete permanently</button>
+          {% else %}
+          <button type="submit" class="link danger small" data-confirm="Remove this comment? A note saying you removed it stays here and in the item history.">Remove</button>
+          {% endif %}
+        </form>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
   {% empty %}<p class="muted">No comments yet.</p>{% endfor %}
   {% if can_edit %}
   <form method="post" action="{% url 'comment_add' ticket.number %}">{% csrf_token %}
@@ -101,4 +132,9 @@
 {% for p in photos %}{% if perms_ok.remove_photo %}
 <form id="remove-{{ p.pk }}" method="post" action="{% url 'photo_remove' p.pk %}" hidden>{% csrf_token %}</form>
 {% endif %}{% endfor %}
+{% if can_delete_permanently %}{% for p in photos %}
+<form id="delete-photo-{{ p.pk }}" method="post" action="{% url 'photo_delete' p.pk %}" hidden>{% csrf_token %}</form>
+{% endfor %}
+<p class="danger-zone"><a class="btn danger-outline" href="{% url 'ticket_delete' ticket.number %}">Delete this ticket permanently…</a></p>
+{% endif %}
 {% endblock %}

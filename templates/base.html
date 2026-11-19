@@ -22,6 +22,7 @@
     {% if perms_ok.manage_users %}<a href="{% url 'user_list' %}">Users</a>{% endif %}
     {% if perms_ok.manage_roles %}<a href="{% url 'role_list' %}">Roles</a>{% endif %}
     {% if perms_ok.view_audit_log %}<a href="{% url 'audit_log' %}">Audit log</a>{% endif %}
+    {% if perms_ok.delete_records %}<a href="{% url 'my_settings' %}">Settings</a>{% endif %}
   </nav>
   <button type="button" class="theme-toggle" data-theme-toggle title="Switch between automatic, light and dark">Theme: Auto</button>
   <form method="post" action="{% url 'logout' %}" class="logout">{% csrf_token %}

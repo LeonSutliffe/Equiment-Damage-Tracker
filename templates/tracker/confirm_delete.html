@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block content %}
+<div class="card confirm-delete">
+  <h1>{{ title }} permanently?</h1>
+  <p>This will permanently delete <strong>{{ what }}</strong>, together with:</p>
+  <ul>{% for s in summary %}<li>{{ s }}</li>{% endfor %}</ul>
+  <p>It can't be undone. Nothing will be left in the {% if is_item %}item{% else %}ticket or item{% endif %} history; only the audit log records who deleted it and when.
+    Photo and document files are erased.</p>
+  {% if not is_item %}<p class="muted small">To keep a record instead, set the ticket to Resolved or Closed.</p>
+  {% else %}<p class="muted small">To keep a record instead, write the item off.</p>{% endif %}
+  <form method="post">{% csrf_token %}
+    <label class="check{% if missing %} has-error{% endif %}"><input type="checkbox" name="confirm" value="1" required> I understand this can't be undone</label>
+    {% if missing %}<div class="error">Tick the box to confirm.</div>{% endif %}
+    <div class="btn-row">
+      <button type="submit" class="btn danger-fill">Delete permanently</button>
+      <a class="btn" href="{{ cancel }}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

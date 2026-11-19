@@ -255,12 +255,29 @@ class FieldChange(models.Model):
 
 
 class Comment(models.Model):
-    """A note on a ticket. Comments can't be edited or deleted, so the conversation stays as written."""
+    """A note on a ticket. Its writer can edit it (every edit is kept and shown). An admin can remove one: normally it is only hidden and a
+    "removed by" note stays in its place; with permanent deletions switched on it is erased."""
 
     ticket = models.ForeignKey(Ticket, on_delete=models.CASCADE, related_name="comments")
     text = models.TextField()
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
     created_at = models.DateTimeField(default=timezone.now)
+    removed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    removed_at = models.DateTimeField(null=True, blank=True)
+    edited_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["created_at", "id"]
+
+
+class CommentEdit(models.Model):
+    """Every edit of a comment, so the earlier wording can always be seen."""
+
+    comment = models.ForeignKey(Comment, on_delete=models.CASCADE, related_name="edits")
+    old_text = models.TextField()
+    new_text = models.TextField()
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
+    edited_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["-edited_at", "-id"]

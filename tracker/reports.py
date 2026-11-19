@@ -148,6 +148,7 @@ def ticket_row(t):
         "Repair time (hours)": t.repair_time if t.repair_time is not None else "",
         "Comments": "\n".join(
             f"{_local(c.created_at)} {c.user.label if c.user else '(deleted user)'}: {c.text}" for c in t.comments.all()
+            if not c.removed_at
         ),
         "Last updated": _local(t.updated_at),
     }

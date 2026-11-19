@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+<div class="narrow">
+  <h1>Settings</h1>
+  <form method="post" class="card">{% csrf_token %}
+    <h2>Deletions</h2>
+    <label class="check switch-row">
+      <input type="checkbox" name="allow_permanent_delete" value="1"{% if user.allow_permanent_delete %} checked{% endif %}>
+      <strong>Allow permanent deletions</strong>
+    </label>
+    <p class="muted small">This only affects you. Each admin has their own switch.</p>
+    <p><strong>Switched off (normal):</strong></p>
+    <ul class="settings-explain">
+      <li>You can remove comments. A note saying you removed it stays on the ticket and in the item history.</li>
+      <li>Tickets and items can't be deleted. Photos and documents can still be removed (the file is kept), and items can be written off.</li>
+    </ul>
+    <p><strong>Switched on:</strong></p>
+    <ul class="settings-explain">
+      <li>“Delete permanently” buttons appear on tickets, items, comments, photos and documents.</li>
+      <li>Deleting asks you to confirm, can't be undone, erases the files and leaves no trace in the ticket or item history.</li>
+    </ul>
+    <p class="muted small">Either way, the audit log records who removed or deleted what, and when.</p>
+    <button type="submit" class="btn primary">Save</button>
+  </form>
+  {% if user.allow_permanent_delete %}<p class="flash flash-warning">Permanent deletions are switched on for you. Switch them off again when you've finished.</p>{% endif %}
+</div>
+{% endblock %}

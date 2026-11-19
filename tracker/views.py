@@ -2,6 +2,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_not_required
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import Case, Count, IntegerField, Q, Sum, Value, When
 from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
@@ -13,6 +14,7 @@ from django.views.decorators.http import require_POST
 from accounts.audit import record
 from accounts.permissions import require_perm
 
+from . import deletion
 from .forms import (
     BulkTicketForm,
     DocumentForm,
@@ -23,6 +25,7 @@ from .forms import (
 )
 from .models import (
     Comment,
+    CommentEdit,
     Document,
     FieldChange,
     Item,
@@ -143,8 +146,15 @@ def item_timeline(request, pk):
             text = f"{label} changed from {old or '(blank)'} to {new or '(blank)'}"
         kind = "resolved" if c.field == "status" and c.new_value == Ticket.Status.RESOLVED else "change"
         add(c.changed_at, c.user, kind, text, t)
-    for c in Comment.objects.filter(ticket__in=tickets).select_related("user"):
-        add(c.created_at, c.user, "comment", f"Comment: {c.text}", by_id[c.ticket_id])
+    for c in Comment.objects.filter(ticket__in=tickets).select_related("user", "removed_by"):
+        t = by_id[c.ticket_id]
+        if c.removed_at:
+            add(c.created_at, c.user, "comment", f"Comment (since removed): {c.text}", t)
+            add(c.removed_at, c.removed_by, "removed", f"Comment by {c.user.label if c.user else '(deleted user)'} removed", t)
+        else:
+            add(c.created_at, c.user, "comment", f"Comment{' (edited)' if c.edited_at else ''}: {c.text}", t)
+    for e in CommentEdit.objects.filter(comment__ticket__in=tickets).select_related("user", "comment"):
+        add(e.edited_at, e.user, "comment", f"Comment edited: “{e.old_text}” → “{e.new_text}”", by_id[e.comment.ticket_id])
     events.sort(key=lambda e: e["when"], reverse=True)
 
     fault_counts = {}
@@ -309,7 +319,7 @@ def ticket_detail(request, number):
 
 def _ticket_context(request, ticket, form, can_edit):
     photos = ticket.photos.filter(removed_at__isnull=True)
-    comments = ticket.comments.select_related("user")
+    comments = ticket.comments.select_related("user", "removed_by")
     return {"form": form, "ticket": ticket, "item": ticket.item, "photos": photos, "can_edit": can_edit,
             "comments": comments}
 
@@ -325,6 +335,103 @@ def comment_add(request, number):
         record(request, "comment", f"Commented on {ticket.code}: {text[:200]}", reverse("ticket_detail", args=[ticket.number]))
         messages.success(request, "Comment added.")
     return redirect(reverse("ticket_detail", args=[ticket.number]) + "#comments")
+
+
+@require_POST
+@require_perm("edit_ticket")
+def comment_edit(request, pk):
+    """People can edit their own comments. Every earlier version is kept and shown."""
+    comment = get_object_or_404(Comment.objects.select_related("ticket"), pk=pk)
+    if comment.user_id != request.user.pk or comment.removed_at:
+        raise PermissionDenied("You can only edit your own comments.")
+    text = request.POST.get("text", "").strip()[:5000]
+    back = reverse("ticket_detail", args=[comment.ticket.number]) + f"#comment-{comment.pk}"
+    if text and text != comment.text:
+        now = timezone.now()
+        with transaction.atomic():
+            CommentEdit.objects.create(comment=comment, old_text=comment.text, new_text=text, user=request.user,
+                                       edited_at=now)
+            Comment.objects.filter(pk=comment.pk).update(text=text, edited_at=now)
+        record(request, "comment", f"Edited a comment on {comment.ticket.code}: {text[:200]}", back)
+        messages.success(request, "Comment updated. The earlier version is kept in its history.")
+    return redirect(back)
+
+
+@require_perm("view")
+def comment_history(request, pk):
+    comment = get_object_or_404(Comment.objects.select_related("user"), pk=pk)
+    edits = list(comment.edits.select_related("user").order_by("edited_at", "id"))
+    versions = [{"when": comment.created_at, "who": comment.user, "text": edits[0].old_text if edits else comment.text,
+                 "note": "written"}]
+    versions += [{"when": e.edited_at, "who": e.user, "text": e.new_text, "note": "edited"} for e in edits]
+    return render(request, "tracker/comment_history.html", {"comment": comment, "versions": versions[::-1]})
+
+
+@require_POST
+@require_perm("delete_records")
+def comment_remove(request, pk):
+    comment = get_object_or_404(Comment.objects.select_related("ticket", "user"), pk=pk)
+    ticket = comment.ticket
+    url = reverse("ticket_detail", args=[ticket.number])
+    who = comment.user.label if comment.user else "(deleted user)"
+    if deletion.can_delete_permanently(request.user):
+        deletion.delete_comment(comment)
+        record(request, "deletion", f"Permanently deleted a comment by {who} on {ticket.code}: {comment.text[:200]}", url)
+        messages.success(request, "Comment permanently deleted.")
+    elif not comment.removed_at:
+        deletion.remove_comment(comment, request.user)
+        record(request, "comment", f"Removed a comment by {who} on {ticket.code}: {comment.text[:200]}", url)
+        messages.success(request, "Comment removed. A note stays in its place and in the item history.")
+    return redirect(url + "#comments")
+
+
+def _require_permanent_delete(request):
+    if not deletion.can_delete_permanently(request.user):
+        raise PermissionDenied("Switch on “Allow permanent deletions” in your Settings first.")
+
+
+@require_perm("delete_records")
+def ticket_delete(request, number):
+    ticket = get_object_or_404(Ticket.objects.select_related("item__item_type"), number=number)
+    _require_permanent_delete(request)
+    cancel = reverse("ticket_detail", args=[ticket.number])
+    summary = deletion.ticket_summary(ticket)
+    missing = request.method == "POST" and not request.POST.get("confirm")
+    if request.method == "POST" and not missing:
+        code, item = ticket.code, ticket.item
+        deletion.delete_ticket(ticket)
+        record(request, "deletion", f"Permanently deleted {code} on {item} ({item.barcode}), with "
+               f"{summary['photos']} photo(s), {summary['comments']} comment(s) and {summary['changes']} history entries",
+               reverse("item_detail", args=[item.pk]))
+        messages.success(request, f"{code} permanently deleted.")
+        return redirect("item_detail", pk=item.pk)
+    return render(request, "tracker/confirm_delete.html", {
+        "title": f"Delete {ticket.code}", "what": f"{ticket.code} on {ticket.item.item_type} ({ticket.item.barcode})",
+        "summary": [f"{summary['photos']} photo(s)", f"{summary['comments']} comment(s)",
+                    f"{summary['changes']} field history entries"],
+        "cancel": cancel, "missing": missing, "is_item": False,
+    })
+
+
+@require_perm("delete_records")
+def item_delete(request, pk):
+    item = get_object_or_404(Item.objects.select_related("item_type"), pk=pk)
+    _require_permanent_delete(request)
+    summary = deletion.item_summary(item)
+    missing = request.method == "POST" and not request.POST.get("confirm")
+    if request.method == "POST" and not missing:
+        label = f"{item.item_type} (barcode {item.barcode}, serial {item.serial_number})"
+        deletion.delete_item(item)
+        record(request, "deletion", f"Permanently deleted item {label}, with {summary['tickets']} ticket(s), "
+               f"{summary['photos']} photo(s) and {summary['documents']} document(s)")
+        messages.success(request, f"{label} permanently deleted.")
+        return redirect("item_list")
+    return render(request, "tracker/confirm_delete.html", {
+        "title": "Delete item", "what": f"{item.item_type} (barcode {item.barcode}, serial {item.serial_number})",
+        "summary": [f"{summary['tickets']} ticket(s) and everything on them", f"{summary['photos']} photo(s)",
+                    f"{summary['documents']} document(s) attached to this item only", "its whole history"],
+        "cancel": reverse("item_detail", args=[item.pk]), "missing": missing, "is_item": True,
+    })
 
 
 def _entry(change, old, new):
@@ -382,6 +489,20 @@ def photo_remove(request, pk):
                reverse("ticket_detail", args=[photo.ticket.number]))
     messages.success(request, "Photo removed from the ticket. It is kept and the removal is logged.")
     return redirect("ticket_detail", number=photo.ticket.number)
+
+
+@require_POST
+@require_perm("delete_records")
+def photo_delete(request, pk):
+    photo = get_object_or_404(Photo.objects.select_related("ticket"), pk=pk)
+    _require_permanent_delete(request)
+    ticket = photo.ticket
+    label = photo.label
+    deletion.delete_photo(photo)
+    record(request, "deletion", f"Permanently deleted {label} from {ticket.code}",
+           reverse("ticket_detail", args=[ticket.number]))
+    messages.success(request, "Photo permanently deleted.")
+    return redirect("ticket_detail", number=ticket.number)
 
 
 # ---------------------------------------------------------------- lists
@@ -574,6 +695,21 @@ def document_remove(request, pk):
         Document.objects.filter(pk=doc.pk).update(removed_at=timezone.now(), removed_by=request.user)
         record(request, "document", f"Removed document “{doc.title}” from {doc.owner_label} (file kept)", back)
         messages.success(request, f"Removed “{doc.title}”. The file is kept and the removal is logged.")
+    return redirect(back)
+
+
+@require_POST
+@require_perm("delete_records")
+def document_delete(request, pk):
+    doc = get_object_or_404(Document.objects.select_related("item", "item_type"), pk=pk)
+    _require_permanent_delete(request)
+    back = request.POST.get("next", "")
+    if not back.startswith("/") or not url_has_allowed_host_and_scheme(back, {request.get_host()}):
+        back = reverse("item_detail", args=[doc.item_id]) if doc.item_id else reverse("item_type_edit", args=[doc.item_type_id])
+    title, owner = doc.title, doc.owner_label
+    deletion.delete_document(doc)
+    record(request, "deletion", f"Permanently deleted document “{title}” from {owner}", back)
+    messages.success(request, f"“{title}” permanently deleted.")
     return redirect(back)
 
 

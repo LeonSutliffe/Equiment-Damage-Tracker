@@ -21,6 +21,9 @@ PERMISSIONS = [
     ("bulk_edit_tickets", "Bulk edit tickets", "Change the status or severity of many tickets at once, or comment on them all."),
     ("view_audit_log", "View audit log", "See who logged in and what everyone changed."),
     ("manage_documents", "Manage documents", "Add manuals and other documents to item types and items, and remove them."),
+    ("delete_records", "Delete records",
+     "Remove comments (shown in history). With 'Allow permanent deletions' switched on in their own Settings, "
+     "permanently delete tickets, items, comments, photos and documents (recorded only in the audit log)."),
 ]
 PERMISSION_CODES = [code for code, _, _ in PERMISSIONS]
 
@@ -73,6 +76,8 @@ class User(AbstractUser):
     role = models.ForeignKey(Role, null=True, blank=True, on_delete=models.PROTECT, related_name="users")
     failed_logins = models.PositiveIntegerField(default=0)
     locked_until = models.DateTimeField(null=True, blank=True)
+    # Personal setting (Settings page): when on, delete buttons erase records instead of hiding them.
+    allow_permanent_delete = models.BooleanField(default=False)
 
     objects = TrackerUserManager()
 
@@ -132,6 +137,8 @@ class AuditEvent(models.Model):
         BULK = "bulk", "Bulk change"
         EXPORT = "export", "Export"
         DOCUMENT = "document", "Document"
+        DELETION = "deletion", "Permanent deletion"
+        SETTINGS = "settings", "Settings"
         ACCOUNTS = "accounts", "Users and roles"
 
     at = models.DateTimeField(default=timezone.now, db_index=True)
