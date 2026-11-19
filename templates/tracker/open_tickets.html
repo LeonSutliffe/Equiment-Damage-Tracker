@@ -5,7 +5,7 @@
 <form method="get" class="filters">
   <select name="fault_type"><option value="">All fault types</option>{% for v, l in fault_types %}<option value="{{ v }}"{% if filters.fault_type == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
   <select name="severity"><option value="">All severities</option>{% for v, l in severities %}<option value="{{ v }}"{% if filters.severity == v %} selected{% endif %}>{{ l }}</option>{% endfor %}</select>
-  <select name="item_type"><option value="">All item types</option>{% for t in item_types %}<option value="{{ t.pk }}"{% if filters.item_type == t.pk|stringformat:"s" %} selected{% endif %}>{{ t.name }}</option>{% endfor %}</select>
+  <select name="item_type"><option value="">All item types</option>{% for t in item_types %}<option value="{{ t.pk }}"{% if filters.item_type == t.pk|stringformat:"s" %} selected{% endif %}>{{ t }}</option>{% endfor %}</select>
   <button class="btn">Filter</button>
 </form>
 {% include "tracker/_bulk_bar.html" %}

@@ -30,17 +30,21 @@ def format_hours(value):
 
 
 class ItemType(models.Model):
-    """A kind of item shared by many units, e.g. "Step ladder 3m"."""
+    """A kind of item shared by many units: manufacturer + model, e.g. "Zarges Step ladder 3m"."""
 
-    name = models.CharField(max_length=150, unique=True)
+    manufacturer = models.CharField(max_length=150, blank=True)
+    name = models.CharField("model name", max_length=150)  # shown as "Model name"
     description = models.CharField(max_length=255, blank=True)
     active = models.BooleanField(default=True)
 
     class Meta:
-        ordering = ["name"]
+        ordering = ["manufacturer", "name"]
+        constraints = [
+            models.UniqueConstraint(fields=["manufacturer", "name"], name="item_type_unique_manufacturer_model"),
+        ]
 
     def __str__(self):
-        return self.name
+        return f"{self.manufacturer} {self.name}" if self.manufacturer else self.name
 
 
 class Item(models.Model):
@@ -65,7 +69,7 @@ class Item(models.Model):
     HISTORY_FIELDS = {**TRACKED_FIELDS, "write_off": "Write-off"}
 
     class Meta:
-        ordering = ["item_type__name", "serial_number"]
+        ordering = ["item_type__manufacturer", "item_type__name", "serial_number"]
 
     def __str__(self):
         return f"{self.item_type} ({self.serial_number})"
