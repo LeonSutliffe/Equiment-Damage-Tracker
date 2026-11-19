@@ -22,8 +22,11 @@ COLOURS = {
     Ticket.Severity.HIGH: ((200, 30, 30), (253, 226, 224), (255, 255, 255)),
     Ticket.Severity.MEDIUM: ((230, 110, 0), (255, 232, 208), (255, 255, 255)),
     Ticket.Severity.LOW: ((250, 204, 21), (255, 248, 204), (30, 30, 30)),
+    "resolved": ((22, 130, 72), (220, 245, 228), (255, 255, 255)),  # resolved tickets, whatever the severity
     "none": ((90, 98, 112), (238, 240, 243), (255, 255, 255)),
 }
+# Word printed on the right of the coloured band.
+BAND_WORDS = {**{v: label.upper() for v, label in Ticket.Severity.choices}, "resolved": "RESOLVED"}
 
 PAD = 1.6  # inner margin so text stays clear of the cut edge
 
@@ -67,14 +70,14 @@ def build_labels_pdf(tickets, fill_templates=False, template_severity="none", st
         pdf.set_font(font, "B", 9)
         pdf.set_xy(x + PAD, y + 0.4)
         pdf.cell(LABEL_W - 2 * PAD, 5.2, clean(title), align="L")
-        if severity in COLOURS and severity != "none":
+        if severity in BAND_WORDS:
             pdf.set_font(font, "B", 6.5)
             pdf.set_xy(x + PAD, y + 0.4)
-            pdf.cell(LABEL_W - 2 * PAD, 5.2, clean(Ticket.Severity(severity).label.upper()), align="R")
+            pdf.cell(LABEL_W - 2 * PAD, 5.2, clean(BAND_WORDS[severity]), align="R")
         pdf.set_text_color(20, 20, 20)
 
     def ticket_label(x, y, t):
-        band(x, y, t.severity, t.code)
+        band(x, y, "resolved" if t.status == Ticket.Status.RESOLVED else t.severity, t.code)
         inner = LABEL_W - 2 * PAD
         for i, (tag, value) in enumerate((("BC", t.item.barcode), ("SN", t.item.serial_number))):
             line_y = y + 7.3 + i * 6.4
@@ -101,9 +104,9 @@ def build_labels_pdf(tickets, fill_templates=False, template_severity="none", st
         # Box outlines: yellow is too faint on pale yellow, so use a darker gold for Low.
         edge = (200, 145, 0) if severity == Ticket.Severity.LOW else strong
         sev_w = 0.0  # room for the severity word on the right of the band
-        if severity in COLOURS and severity != "none":
+        if severity in BAND_WORDS:
             pdf.set_font(font, "B", 6.5)
-            sev_w = pdf.get_string_width(Ticket.Severity(severity).label.upper()) + 1.0
+            sev_w = pdf.get_string_width(BAND_WORDS[severity]) + 1.0
         # Ticket number: "T-" then a white box inside the coloured band.
         pdf.set_font(font, "B", 9)
         pdf.set_text_color(*on_band)
