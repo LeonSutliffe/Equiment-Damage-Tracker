@@ -1,0 +1,31 @@
+<section class="card" id="documents">
+  <h2>Manuals and documents</h2>
+  {% if documents %}
+  <ul class="doc-list">
+    {% for d in documents %}
+    <li>
+      <a href="{% url 'document_open' d.pk %}" target="_blank" rel="noopener"><strong>{{ d.title }}</strong></a>
+      <span class="muted small">{{ d.extension }}{% if d.extension %} · {% endif %}{{ d.size|filesizeformat }}{% if show_scope %} · {% if d.item_type_id %}every {{ d.item_type }}{% else %}this item only{% endif %}{% endif %}</span>
+      {% if perms_ok.manage_documents %}
+      <form method="post" action="{% url 'document_remove' d.pk %}" class="inline">{% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}#documents">
+        <button type="submit" class="link danger small" data-confirm="Remove “{{ d.title }}”? The file is kept and the removal is logged.">Remove</button>
+      </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted">No documents yet.</p>{% endif %}
+  {% if doc_form %}
+  <details class="doc-add"{% if not documents %} open{% endif %}>
+    <summary class="btn">+ Add a document</summary>
+    <form method="post" enctype="multipart/form-data" action="{{ add_url }}">{% csrf_token %}
+      <div class="field"><label for="{{ doc_form.file.id_for_label }}">File</label>{{ doc_form.file }}
+        <small class="help">PDF, Word, Excel, pictures and similar, up to {{ doc_max_mb }} MB.</small></div>
+      <div class="field"><label for="{{ doc_form.title.id_for_label }}">Title</label>{{ doc_form.title }}</div>
+      {% if doc_form.attach_to %}<div class="field"><span class="label">Show on</span>{% for r in doc_form.attach_to %}<label class="check">{{ r.tag }} {{ r.choice_label }}</label>{% endfor %}</div>{% endif %}
+      <button type="submit" class="btn primary">Add document</button>
+    </form>
+  </details>
+  {% endif %}
+</section>

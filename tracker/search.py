@@ -57,4 +57,9 @@ def search(raw_query):
         .filter(Q(barcode__icontains=query) | Q(serial_number__icontains=query) | Q(item_type__name__icontains=query))
         .order_by("item_type__name", "serial_number")[:50]
     )
+    # Tickets whose previous job matches (e.g. "Glastonbury").
+    if len(query) >= 2:
+        result.tickets = list(
+            Ticket.objects.select_related("item__item_type").filter(previous_job__icontains=query).order_by("-number")[:50]
+        )
     return result

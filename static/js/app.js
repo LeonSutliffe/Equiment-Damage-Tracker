@@ -167,4 +167,41 @@
     });
     update();
   });
+  // Reports: "Choose fields…" popup. The choice is remembered on this device.
+  var fieldsDialog = document.getElementById("fields-dialog");
+  if (fieldsDialog) {
+    var boxes = fieldsDialog.querySelectorAll('input[name="fields"]');
+    var summary = document.querySelector("[data-fields-summary]");
+    var KEY = "reportFields";
+    function showSummary() {
+      var n = 0;
+      boxes.forEach(function (b) { if (b.checked) n++; });
+      summary.textContent = n === boxes.length ? "All fields included" : n + " of " + boxes.length + " fields included";
+    }
+    function save() {
+      var chosen = [];
+      boxes.forEach(function (b) { if (b.checked) chosen.push(b.value); });
+      try { localStorage.setItem(KEY, JSON.stringify(chosen)); } catch (e) {}
+    }
+    // A fresh visit (not a submitted report) starts from the last choice.
+    if (window.location.search.indexOf("fields_set=") === -1) {
+      try {
+        var saved = JSON.parse(localStorage.getItem(KEY) || "null");
+        if (Array.isArray(saved) && saved.length) {
+          boxes.forEach(function (b) { b.checked = saved.indexOf(b.value) !== -1; });
+        }
+      } catch (e) {}
+    }
+    showSummary();
+    document.querySelector("[data-fields-open]").addEventListener("click", function () { fieldsDialog.showModal(); });
+    fieldsDialog.querySelector("[data-fields-close]").addEventListener("click", function () { fieldsDialog.close(); });
+    fieldsDialog.querySelector("[data-fields-all]").addEventListener("click", function () {
+      boxes.forEach(function (b) { b.checked = true; }); save(); showSummary();
+    });
+    fieldsDialog.querySelector("[data-fields-none]").addEventListener("click", function () {
+      boxes.forEach(function (b) { b.checked = false; }); save(); showSummary();
+    });
+    boxes.forEach(function (b) { b.addEventListener("change", function () { save(); showSummary(); }); });
+  }
+
 })();

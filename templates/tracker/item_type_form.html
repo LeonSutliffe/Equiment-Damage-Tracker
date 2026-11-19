@@ -8,5 +8,10 @@
     <button type="submit" class="btn primary">Save</button>
     <a class="btn" href="{% url 'item_type_list' %}">Cancel</a>
   </form>
+  {% if item_type %}
+    {% url 'document_add_type' item_type.pk as add_url %}
+    <p class="muted small">Documents here show on every {{ item_type }}.</p>
+    {% include "tracker/_documents.html" with add_url=add_url %}
+  {% endif %}
 </div>
 {% endblock %}

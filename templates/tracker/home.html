@@ -2,7 +2,7 @@
 {% block title %}Search{% endblock %}
 {% block content %}
 <form method="get" action="{% url 'home' %}" class="search card">
-  <label for="q">Barcode, serial or ticket number</label>
+  <label for="q">Barcode, serial, ticket number or previous job</label>
   <div class="search-row">
     <input id="q" name="q" value="{{ query }}" autofocus autocomplete="off" autocapitalize="none" spellcheck="false" inputmode="text" enterkeyhint="search">
     <button type="submit" class="btn primary">Search</button>
@@ -18,7 +18,17 @@
         <li><a href="{% url 'item_detail' item.pk %}"><strong>{{ item.item_type }}</strong><span>Barcode {{ item.barcode }} · Serial {{ item.serial_number }}</span></a></li>
       {% endfor %}
     </ul>
-  {% else %}
+  {% endif %}
+  {% if result.tickets %}
+    <h2>{{ result.tickets|length }} ticket{{ result.tickets|length|pluralize }} with previous job “{{ result.query }}”</h2>
+    <ul class="pick-list">
+      {% for t in result.tickets %}
+        <li><a href="{% url 'ticket_detail' t.number %}"><strong>{{ t.code }} · {{ t.item.item_type }} ({{ t.item.barcode }})</strong>
+          <span><span class="badge {{ t.status }}">{{ t.get_status_display }}</span> {{ t.previous_job }} · {{ t.created_at|date:"j M Y" }}</span></a></li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+  {% if not result.items and not result.tickets %}
     <div class="card empty">
       <h2>Nothing found for “{{ result.query }}”</h2>
       {% if perms_ok.create_item %}

@@ -7,11 +7,19 @@
   After this:
   - Normal (non-administrator) accounts, including programs you run day to day, can only READ the folder.
   - Administrators and the app's Windows service can add and change data, but Windows refuses to
-    delete the database file, the secret key or any photo (so the folder can't be deleted either).
+    delete the database file, the secret key, any photo or any document (so the folder can't be deleted either).
   - The app itself never deletes these files (removed photos are only hidden), so it keeps working.
   To delete it deliberately one day, first run:  icacls "<folder>" /reset /T
 #>
 param([string]$DataDir)
+
+function Protect-Subfolder([string]$Dir, [string]$Name) {
+    # Nobody may delete files in this subfolder, now or in the future. (Removing one in the app only hides it.)
+    $folder = Join-Path $Dir $Name
+    New-Item -ItemType Directory -Force -Path $folder | Out-Null
+    & icacls $folder /deny "*S-1-5-32-544:(OI)(CI)(DE)" "*S-1-5-32-545:(OI)(CI)(DE,DC)" /Q | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Couldn't protect $folder" }
+}
 
 function Protect-DataFolder([string]$Dir) {
     if (-not (Test-Path $Dir)) { throw "Data folder $Dir doesn't exist." }
@@ -36,11 +44,8 @@ function Protect-DataFolder([string]$Dir) {
         $p = Join-Path $Dir $f
         if (Test-Path $p) { & icacls $p /deny "${admins}:(DE)" "${users}:(DE)" /Q | Out-Null }
     }
-    # Nor any photo, now or in the future. (Removing a photo in the app only hides it.)
-    $photos = Join-Path $Dir "photos"
-    New-Item -ItemType Directory -Force -Path $photos | Out-Null
-    & icacls $photos /deny "${admins}:(OI)(CI)(DE)" "${users}:(OI)(CI)(DE,DC)" /Q | Out-Null
-    if ($LASTEXITCODE -ne 0) { throw "Couldn't protect $photos" }
+    # Nor any photo or document.
+    foreach ($sub in "photos", "documents") { Protect-Subfolder $Dir $sub }
     Write-Host "Protected $Dir against deletion (normal accounts can only read it)."
 }
 

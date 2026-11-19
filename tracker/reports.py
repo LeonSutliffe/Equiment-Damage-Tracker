@@ -8,7 +8,13 @@ from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 
-from .models import ItemType, Ticket, format_cost
+from .models import ItemType, Ticket, format_cost, format_hours
+
+COLUMNS = ["Ticket", "Created", "Created by", "Status", "Fault Type", "Severity", "Item type", "Barcode",
+           "Serial number", "Previous job", "Fault Description", "Work Done", "Repair cost", "Repair time (hours)",
+           "Comments", "Last updated"]
+# Everything except the ticket number (always included) can be left out of exports.
+CHOOSABLE = COLUMNS[1:] + ["Photo count"]
 
 
 class ReportForm(forms.Form):
@@ -28,9 +34,14 @@ class ReportForm(forms.Form):
     )
     text = forms.CharField(
         required=False, label="Contains text",
-        help_text="Searches fault description, work done, barcode and serial number.",
+        help_text="Searches fault description, work done, previous job, barcode and serial number.",
     )
     include_photos = forms.BooleanField(required=False, label="Include photos")
+    fields = forms.MultipleChoiceField(
+        choices=[(c, c) for c in CHOOSABLE], required=False, initial=CHOOSABLE, label="Fields to include",
+        widget=forms.CheckboxSelectMultiple,
+    )
+    fields_set = forms.CharField(required=False, widget=forms.HiddenInput, initial="1")
 
     # Sticker sheet options (65 per A4 sheet).
     label_start = forms.IntegerField(
@@ -50,7 +61,17 @@ class ReportForm(forms.Form):
         data = super().clean()
         if data.get("created_from") and data.get("created_to") and data["created_from"] > data["created_to"]:
             raise forms.ValidationError("The 'from' date is after the 'to' date.")
+        if data.get("fields_set") and not data.get("fields"):
+            raise forms.ValidationError("Choose at least one field to include (Choose fields…).")
         return data
+
+
+def selected_columns(data):
+    """The chosen fields, in screen order; all of them if the choice wasn't sent (e.g. an old link)."""
+    chosen = data.get("fields") if data.get("fields_set") else None
+    if not chosen:
+        return list(CHOOSABLE)
+    return [c for c in CHOOSABLE if c in chosen]
 
 
 def _day_start(day):
@@ -74,7 +95,7 @@ def filter_tickets(data):
     if data.get("text"):
         t = data["text"].strip()
         tickets = tickets.filter(
-            Q(fault_description__icontains=t) | Q(work_done__icontains=t)
+            Q(fault_description__icontains=t) | Q(work_done__icontains=t) | Q(previous_job__icontains=t)
             | Q(item__barcode__icontains=t) | Q(item__serial_number__icontains=t)
         )
     return tickets
@@ -106,10 +127,6 @@ def _photos(ticket):
     return [p for p in ticket.photos.all() if p.removed_at is None]
 
 
-COLUMNS = ["Ticket", "Created", "Created by", "Status", "Fault Type", "Severity", "Item type", "Barcode",
-           "Serial number", "Fault Description", "Work Done", "Repair cost", "Comments", "Last updated"]
-
-
 def ticket_row(t):
     return {
         "Ticket": t.code,
@@ -121,9 +138,11 @@ def ticket_row(t):
         "Item type": str(t.item.item_type),
         "Barcode": t.item.barcode,
         "Serial number": t.item.serial_number,
+        "Previous job": t.previous_job,
         "Fault Description": t.fault_description,
         "Work Done": t.work_done,
         "Repair cost": t.repair_cost if t.repair_cost is not None else "",
+        "Repair time (hours)": t.repair_time if t.repair_time is not None else "",
         "Comments": "\n".join(
             f"{_local(c.created_at)} {c.user.label if c.user else '(deleted user)'}: {c.text}" for c in t.comments.all()
         ),
@@ -146,15 +165,16 @@ def build_xlsx(tickets, data):
     ws.title = "Tickets"
     tickets = list(tickets.prefetch_related("photos", "comments__user"))
 
-    headers = COLUMNS + ["Photos"]
+    chosen = selected_columns(data)
+    headers = ["Ticket"] + [c for c in COLUMNS[1:] if c in chosen] + (["Photos"] if "Photo count" in chosen else [])
     ws.append(headers)
     for cell in ws[1]:
         cell.font = Font(bold=True, color="FFFFFF")
         cell.fill = PatternFill("solid", fgColor="14213D")
         cell.alignment = Alignment(vertical="center")
     widths = {"Ticket": 10, "Created": 17, "Created by": 14, "Status": 12, "Fault Type": 13, "Severity": 9,
-              "Item type": 20, "Barcode": 15, "Serial number": 15, "Fault Description": 45, "Work Done": 45,
-              "Repair cost": 11, "Comments": 45, "Last updated": 17, "Photos": 8}
+              "Item type": 20, "Barcode": 15, "Serial number": 15, "Previous job": 22, "Fault Description": 45, "Work Done": 45,
+              "Repair cost": 11, "Repair time (hours)": 11, "Comments": 45, "Last updated": 17, "Photos": 8}
     for i, h in enumerate(headers, start=1):
         ws.column_dimensions[get_column_letter(i)].width = widths.get(h, 14)
 
@@ -163,7 +183,8 @@ def build_xlsx(tickets, data):
     for r, t in enumerate(tickets, start=2):
         row = ticket_row(t)
         photos = _photos(t)
-        ws.append(list(row.values()) + [len(photos)])
+        row["Photos"] = len(photos)
+        ws.append([row[h] for h in headers])
         for cell in ws[r]:
             cell.alignment = Alignment(wrap_text=True, vertical="top")
         if include_photos and photos:
@@ -180,16 +201,19 @@ def build_xlsx(tickets, data):
                 ws.add_image(img, f"{get_column_letter(col)}{r}")
     if include_photos:
         ws.cell(row=1, column=photo_col, value="Photo thumbnails").font = Font(bold=True)
-    cost_col = get_column_letter(headers.index("Repair cost") + 1)
-    for r in range(2, len(tickets) + 2):
-        ws[f"{cost_col}{r}"].number_format = "£#,##0.00"
-    if tickets:
-        total_row = len(tickets) + 3  # one blank row, so sorting and filtering leave the total alone
-        ws.cell(row=total_row, column=1, value="Total repair cost").font = Font(bold=True)
-        total = ws[f"{cost_col}{total_row}"]
-        total.value = f"=SUM({cost_col}2:{cost_col}{len(tickets) + 1})"
-        total.number_format = "£#,##0.00"
-        total.font = Font(bold=True)
+    total_row = len(tickets) + 3  # one blank row, so sorting and filtering leave the totals alone
+    for name, fmt in (("Repair cost", "£#,##0.00"), ("Repair time (hours)", "0.00")):
+        if name not in headers:
+            continue
+        col = get_column_letter(headers.index(name) + 1)
+        for r in range(2, len(tickets) + 2):
+            ws[f"{col}{r}"].number_format = fmt
+        if tickets:
+            ws.cell(row=total_row, column=1, value="Totals").font = Font(bold=True)
+            total = ws[f"{col}{total_row}"]
+            total.value = f"=SUM({col}2:{col}{len(tickets) + 1})"
+            total.number_format = fmt
+            total.font = Font(bold=True)
     ws.freeze_panes = "B2"
     ws.auto_filter.ref = f"A1:{get_column_letter(len(headers))}{max(len(tickets) + 1, 1)}"
 
@@ -199,6 +223,7 @@ def build_xlsx(tickets, data):
     info.append(["Generated", timezone.localtime().strftime("%d %b %Y %H:%M")])
     info.append(["Tickets", len(tickets)])
     info.append(["Total repair cost", format_cost(sum((t.repair_cost or 0) for t in tickets))])
+    info.append(["Total repair time", format_hours(sum((t.repair_time or 0) for t in tickets))])
     for label, value in describe_filters(data):
         info.append([label, value])
     info.column_dimensions["A"].width = 18
@@ -281,9 +306,13 @@ def build_pdf(tickets, data):
     pdf.set_text_color(90)
     for label, value in describe_filters(data):
         pdf.multi_cell(0, 5, clean(f"{label}: {value}"), new_x="LMARGIN", new_y="NEXT")
-    total_cost = format_cost(sum((t.repair_cost or 0) for t in tickets))
-    pdf.multi_cell(0, 5, clean(f"{len(tickets)} ticket{'s' if len(tickets) != 1 else ''}, total repair cost {total_cost}"),
-                   new_x="LMARGIN", new_y="NEXT")
+    chosen_cols = set(selected_columns(data))
+    summary = [f"{len(tickets)} ticket{'s' if len(tickets) != 1 else ''}"]
+    if "Repair cost" in chosen_cols:
+        summary.append(f"total repair cost {format_cost(sum((t.repair_cost or 0) for t in tickets))}")
+    if "Repair time (hours)" in chosen_cols:
+        summary.append(f"total repair time {format_hours(sum((t.repair_time or 0) for t in tickets))}")
+    pdf.multi_cell(0, 5, clean(", ".join(summary)), new_x="LMARGIN", new_y="NEXT")
     pdf.set_text_color(0)
     pdf.ln(3)
 
@@ -292,6 +321,11 @@ def build_pdf(tickets, data):
         pdf.cell(0, 8, clean("No tickets match these filters."))
 
     thumb_w, gap = 42, 3
+    chosen = set(selected_columns(data))
+
+    def pick(*pairs):
+        return [text for name, text in pairs if name in chosen]
+
     for t in tickets:
         row = ticket_row(t)
         photos = _photos(t) if include_photos else []
@@ -302,19 +336,28 @@ def build_pdf(tickets, data):
         pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + width, pdf.get_y())
         pdf.ln(2)
         pdf.set_font(font, "B", 12)
-        pdf.cell(0, 7, clean(f"{t.code}  -  {row['Item type']}"), new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, 7, clean("  -  ".join([t.code] + pick(("Item type", row["Item type"])))),
+                 new_x="LMARGIN", new_y="NEXT")
         pdf.set_font(font, "", 9)
-        pdf.multi_cell(0, 5, clean(
-            f"Barcode {row['Barcode']}   Serial {row['Serial number']}   |   "
-            f"{row['Status']}   |   {row['Fault Type']}   |   Severity {row['Severity']}"
-            + (f"   |   Repair cost {format_cost(t.repair_cost)}" if t.repair_cost is not None else "")
-        ), new_x="LMARGIN", new_y="NEXT")
-        pdf.set_text_color(90)
-        pdf.multi_cell(0, 5, clean(f"Created {row['Created']} by {row['Created by'] or '-'}   Last updated {row['Last updated']}"),
-                       new_x="LMARGIN", new_y="NEXT")
-        pdf.set_text_color(0)
-        for label in ("Fault Description", "Work Done", "Comments"):
-            if row[label]:
+        ids = "   ".join(pick(("Barcode", f"Barcode {row['Barcode']}"), ("Serial number", f"Serial {row['Serial number']}")))
+        facts = pick(
+            ("Status", row["Status"]), ("Fault Type", row["Fault Type"]), ("Severity", f"Severity {row['Severity']}"),
+            ("Repair cost", f"Repair cost {format_cost(t.repair_cost)}" if t.repair_cost is not None else ""),
+            ("Repair time (hours)", f"Repair time {format_hours(t.repair_time)}" if t.repair_time is not None else ""),
+        )
+        line = "   |   ".join(x for x in [ids] + facts if x)
+        if line:
+            pdf.multi_cell(0, 5, clean(line), new_x="LMARGIN", new_y="NEXT")
+        dates = "   ".join(pick(
+            ("Created", f"Created {row['Created']}"), ("Created by", f"by {row['Created by'] or '-'}"),
+            ("Last updated", f"Last updated {row['Last updated']}"),
+        ))
+        if dates:
+            pdf.set_text_color(90)
+            pdf.multi_cell(0, 5, clean(dates), new_x="LMARGIN", new_y="NEXT")
+            pdf.set_text_color(0)
+        for label in ("Previous job", "Fault Description", "Work Done", "Comments"):
+            if label in chosen and row[label]:
                 pdf.set_font(font, "B", 9)
                 pdf.cell(0, 5, clean(label), new_x="LMARGIN", new_y="NEXT")
                 pdf.set_font(font, "", 10)

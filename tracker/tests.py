@@ -516,3 +516,172 @@ class NewFeatureTests(TestCase):
         # An outside "next" address is ignored.
         r = self.client.post(url, {"tickets": [c.number], "severity": "low", "next": "https://evil.example/"})
         self.assertRedirects(r, reverse("open_tickets"))
+
+
+TMP_DOCS = tempfile.mkdtemp()
+
+
+@override_settings(PHOTOS_DIR=Path(TMP_PHOTOS), DOCUMENTS_DIR=Path(TMP_DOCS), SECURE_SSL_REDIRECT=False)
+class DocumentAndRepairTimeTests(TestCase):
+    @classmethod
+    def tearDownClass(cls):
+        super().tearDownClass()
+        shutil.rmtree(TMP_DOCS, ignore_errors=True)
+
+    def setUp(self):
+        self.user = User.objects.create_user("jsmith", password="pw", role=Role.objects.get(name="User"))
+        self.admin = User.objects.create_user("leon", password="pw", role=Role.objects.get(name="Admin"))
+        self.ladder = ItemType.objects.create(name="Step ladder 3m")
+        self.item = Item.objects.create(item_type=self.ladder, barcode="501", serial_number="LD-1")
+        self.other = Item.objects.create(item_type=self.ladder, barcode="502", serial_number="LD-2")
+        self.client.force_login(self.admin)
+
+    def pdf(self, name="Manual.pdf"):
+        return SimpleUploadedFile(name, b"%PDF-1.4 test", content_type="application/pdf")
+
+    def test_type_document_shows_on_every_item(self):
+        r = self.client.post(reverse("document_add_item", args=[self.item.pk]),
+                             {"file": self.pdf(), "title": "User manual", "attach_to": "type"})
+        self.assertEqual(r.status_code, 302)
+        from .models import Document
+
+        doc = Document.objects.get()
+        self.assertEqual(doc.item_type, self.ladder)
+        self.assertIsNone(doc.item)
+        self.assertTrue((Path(TMP_DOCS) / doc.file_name).is_file())
+        self.assertContains(self.client.get(reverse("item_detail", args=[self.other.pk])), "User manual")
+        # Any user with View can open it; PDFs open in the browser.
+        self.client.force_login(self.user)
+        r = self.client.get(reverse("document_open", args=[doc.pk]))
+        self.assertEqual(r["Content-Type"], "application/pdf")
+        self.assertIn("inline", r["Content-Disposition"])
+        self.assertEqual(b"".join(r.streaming_content), b"%PDF-1.4 test")
+        # But can't add or remove without Manage documents.
+        self.assertEqual(self.client.post(reverse("document_remove", args=[doc.pk])).status_code, 403)
+        self.assertEqual(self.client.post(reverse("document_add_type", args=[self.ladder.pk]),
+                                          {"file": self.pdf()}).status_code, 403)
+
+    def test_item_only_document_and_remove(self):
+        self.client.post(reverse("document_add_item", args=[self.item.pk]),
+                         {"file": self.pdf("cert.pdf"), "attach_to": "item"})
+        from .models import Document
+
+        doc = Document.objects.get()
+        self.assertEqual((doc.item, doc.item_type, doc.title), (self.item, None, "cert"))
+        self.assertNotContains(self.client.get(reverse("item_detail", args=[self.other.pk])), "<strong>cert</strong>")
+        self.client.post(reverse("document_remove", args=[doc.pk]))
+        doc.refresh_from_db()
+        self.assertIsNotNone(doc.removed_at)
+        self.assertTrue((Path(TMP_DOCS) / doc.file_name).is_file())  # file kept
+        self.assertEqual(self.client.get(reverse("document_open", args=[doc.pk])).status_code, 404)
+        from accounts.models import AuditEvent
+
+        self.assertEqual(AuditEvent.objects.filter(kind="document").count(), 2)
+
+    def test_item_type_page_upload_and_bad_files(self):
+        r = self.client.post(reverse("document_add_type", args=[self.ladder.pk]),
+                             {"file": SimpleUploadedFile("spec.docx", b"PK..."), "title": "Spec"})
+        self.assertRedirects(r, reverse("item_type_edit", args=[self.ladder.pk]) + "#documents",
+                             fetch_redirect_response=False)
+        self.assertContains(self.client.get(reverse("item_type_edit", args=[self.ladder.pk])), "Spec")
+        r = self.client.get(reverse("document_open", args=[1]))
+        self.assertIn("attachment", r["Content-Disposition"])  # Word files download
+        r = self.client.post(reverse("document_add_type", args=[self.ladder.pk]),
+                             {"file": SimpleUploadedFile("run.exe", b"MZ")}, follow=True)
+        self.assertContains(r, "can&#x27;t be added")
+        from .models import Document
+
+        self.assertEqual(Document.objects.count(), 1)
+
+    def test_repair_time(self):
+        t = create_ticket(self.item, self.admin, {"fault_type": "safety", "severity": "high", "repair_time": "1.5"})
+        r = self.client.post(reverse("ticket_detail", args=[t.number]), {
+            "version": 1, "status": "open", "fault_type": "safety", "severity": "high",
+            "repair_time": "2.25", "repair_cost": "40"})
+        self.assertEqual(r.status_code, 302)
+        t.refresh_from_db()
+        self.assertEqual(str(t.repair_time), "2.25")
+        r = self.client.get(reverse("ticket_history", args=[t.number, "repair_time"]))
+        self.assertContains(r, "1.5 h")
+        self.assertContains(r, "2.25 h")
+        create_ticket(self.item, self.admin, {"fault_type": "cosmetic", "severity": "low", "repair_time": "0.75"})
+        r = self.client.get(reverse("reports"), {"action": "view"})
+        from decimal import Decimal
+
+        self.assertEqual(r.context["total_hours"], Decimal("3"))
+        r = self.client.get(reverse("item_timeline", args=[self.item.pk]))
+        self.assertContains(r, "3 h")
+        from openpyxl import load_workbook
+
+        ws = load_workbook(BytesIO(self.client.get(reverse("reports"), {"action": "xlsx"}).content))["Tickets"]
+        self.assertIn("Repair time (hours)", [c.value for c in ws[1]])
+        self.assertEqual(self.client.get(reverse("reports"), {"action": "pdf"}).status_code, 200)
+
+
+@override_settings(PHOTOS_DIR=Path(TMP_PHOTOS), SECURE_SSL_REDIRECT=False)
+class PreviousJobTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user("leon", password="pw", role=Role.objects.get(name="Admin"))
+        self.item = Item.objects.create(item_type=ItemType.objects.create(name="Drill"), barcode="9001", serial_number="DR-9")
+        self.client.force_login(self.admin)
+
+    def test_previous_job_saved_logged_searched_and_reported(self):
+        self.client.post(reverse("ticket_create", args=[self.item.pk]),
+                         {"fault_type": "functionality", "severity": "medium", "previous_job": "Glastonbury 2026"})
+        t = Ticket.objects.get()
+        self.assertEqual(t.previous_job, "Glastonbury 2026")
+        self.client.post(reverse("ticket_detail", args=[t.number]), {
+            "version": 1, "status": "open", "fault_type": "functionality", "severity": "medium",
+            "previous_job": "Reading Festival"})
+        r = self.client.get(reverse("ticket_history", args=[t.number, "previous_job"]))
+        self.assertContains(r, "Glastonbury 2026")
+        self.assertContains(r, "Reading Festival")
+        r = self.client.get(reverse("home"), {"q": "reading"})
+        self.assertContains(r, t.code)
+        r = self.client.get(reverse("reports"), {"action": "view", "text": "reading"})
+        self.assertEqual(r.context["count"], 1)
+        from openpyxl import load_workbook
+
+        ws = load_workbook(BytesIO(self.client.get(reverse("reports"), {"action": "xlsx"}).content))["Tickets"]
+        col = [c.value for c in ws[1]].index("Previous job")
+        self.assertEqual(ws[2][col].value, "Reading Festival")
+        self.assertContains(self.client.get(reverse("item_timeline", args=[self.item.pk])), "Reading Festival")
+
+
+@override_settings(PHOTOS_DIR=Path(TMP_PHOTOS), SECURE_SSL_REDIRECT=False)
+class ReportFieldChoiceTests(TestCase):
+    def setUp(self):
+        admin = User.objects.create_user("leon", password="pw", role=Role.objects.get(name="Admin"))
+        item = Item.objects.create(item_type=ItemType.objects.create(name="Drill"), barcode="9001", serial_number="DR-9")
+        create_ticket(item, admin, {"fault_type": "safety", "severity": "high", "fault_description": "Chuck loose",
+                                    "previous_job": "Secret job", "repair_cost": "12"})
+        self.client.force_login(admin)
+
+    def xlsx_headers(self, params):
+        from openpyxl import load_workbook
+
+        r = self.client.get(reverse("reports"), {"action": "xlsx"} | params)
+        ws = load_workbook(BytesIO(r.content))["Tickets"]
+        return [c.value for c in ws[1]], ws
+
+    def test_only_chosen_fields_exported(self):
+        headers, ws = self.xlsx_headers({"fields_set": "1", "fields": ["Severity", "Repair cost"]})
+        self.assertEqual(headers, ["Ticket", "Severity", "Repair cost"])
+        self.assertEqual(ws["C4"].value, "=SUM(C2:C2)")
+        # Without a choice (e.g. an old link) everything is included.
+        headers, _ = self.xlsx_headers({})
+        self.assertIn("Previous job", headers)
+        self.assertIn("Photos", headers)
+        # PDF leaves unchosen fields out.
+        r = self.client.get(reverse("reports"), {"action": "pdf", "fields_set": "1", "fields": ["Severity"]})
+        self.assertEqual(r.status_code, 200)
+
+    def test_none_chosen_is_refused(self):
+        r = self.client.get(reverse("reports"), {"action": "xlsx", "fields_set": "1"})
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "Choose at least one field")
+
+    def test_reports_page_has_chooser(self):
+        r = self.client.get(reverse("reports"))
+        self.assertContains(r, 'id="fields-dialog"')
+        self.assertContains(r, 'value="Previous job"')

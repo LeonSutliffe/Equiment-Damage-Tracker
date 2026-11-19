@@ -15,12 +15,13 @@ from django.utils import timezone
 from .models import FieldChange, Item, ItemChange, Photo, Ticket
 from .photos import process_upload
 
-TEXT_FIELDS = ("status", "fault_type", "severity", "fault_description", "work_done")
-EDIT_FIELDS = TEXT_FIELDS + ("repair_cost",)
+TEXT_FIELDS = ("status", "fault_type", "severity", "previous_job", "fault_description", "work_done")
+NUMBER_FIELDS = ("repair_cost", "repair_time")
+EDIT_FIELDS = TEXT_FIELDS + NUMBER_FIELDS
 
 
 def _clean(field, value):
-    if field == "repair_cost":
+    if field in NUMBER_FIELDS:
         return None if value in ("", None) else value
     return value or ""
 

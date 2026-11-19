@@ -20,6 +20,7 @@ PERMISSIONS = [
     ("write_off_item", "Write off item", "Write off (dispose of) an item, or put it back in use. Its history is kept."),
     ("bulk_edit_tickets", "Bulk edit tickets", "Change the status or severity of many tickets at once, or comment on them all."),
     ("view_audit_log", "View audit log", "See who logged in and what everyone changed."),
+    ("manage_documents", "Manage documents", "Add manuals and other documents to item types and items, and remove them."),
 ]
 PERMISSION_CODES = [code for code, _, _ in PERMISSIONS]
 
@@ -130,6 +131,7 @@ class AuditEvent(models.Model):
         ITEM_TYPE = "item_type", "Item type"
         BULK = "bulk", "Bulk change"
         EXPORT = "export", "Export"
+        DOCUMENT = "document", "Document"
         ACCOUNTS = "accounts", "Users and roles"
 
     at = models.DateTimeField(default=timezone.now, db_index=True)

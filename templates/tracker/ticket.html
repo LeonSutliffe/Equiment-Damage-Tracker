@@ -40,6 +40,7 @@
   {% if form.status %}{% include "tracker/_ticket_field.html" with field=form.status name="status" %}{% endif %}
   {% include "tracker/_ticket_field.html" with field=form.fault_type name="fault_type" %}
   {% include "tracker/_ticket_field.html" with field=form.severity name="severity" %}
+  {% include "tracker/_ticket_field.html" with field=form.previous_job name="previous_job" %}
   {% include "tracker/_ticket_field.html" with field=form.fault_description name="fault_description" %}
 
   <div class="field{% if form.photos.errors %} has-error{% endif %}"{% if ticket %} data-history="{% url 'ticket_history' ticket.number 'photos' %}"{% endif %}>
@@ -69,7 +70,10 @@
   </div>
 
   {% include "tracker/_ticket_field.html" with field=form.work_done name="work_done" %}
-  {% include "tracker/_ticket_field.html" with field=form.repair_cost name="repair_cost" %}
+  <div class="two-col">
+    {% include "tracker/_ticket_field.html" with field=form.repair_cost name="repair_cost" %}
+    {% include "tracker/_ticket_field.html" with field=form.repair_time name="repair_time" %}
+  </div>
 
   {% if can_edit %}<button type="submit" class="btn primary wide">{% if ticket %}Save{% else %}Create ticket{% endif %}</button>{% endif %}
   {% if ticket %}<p class="muted small">Press and hold (or right-click) a field, or tap &#128339;, to see who changed it and when. Opened {{ ticket.created_at|date:"j M Y H:i" }}.</p>{% endif %}

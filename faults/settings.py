@@ -150,6 +150,11 @@ PHOTO_MAX_EDGE = 2000
 PHOTO_THUMB_EDGE = 320
 DATA_UPLOAD_MAX_NUMBER_FILES = 30
 
+# Manuals and other documents for item types and items; same protected folder rules as photos.
+DOCUMENTS_DIR = DATA_DIR / "documents"
+DOCUMENTS_DIR.mkdir(parents=True, exist_ok=True)
+DOCUMENT_MAX_UPLOAD_BYTES = int(os.environ.get("FAULTS_DOC_MAX_MB", "50")) * 1024 * 1024
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 # HTTPS (architecture 7.5). Caddy terminates TLS and forwards to Waitress on

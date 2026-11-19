@@ -90,7 +90,7 @@ powershell -ExecutionPolicy Bypass -File C:\DamageTracker\deploy\windows\update.
 
 ## Where the data is
 
-The database (`db.sqlite3`), the `photos` folder and the secret key live in **`C:\ProgramData\DamageTracker\data`**, outside the program folder, so updating or reinstalling the program never touches them. (`C:\ProgramData` is hidden in Explorer by default; type the path into the address bar.)
+The database (`db.sqlite3`), the `photos` and `documents` folders and the secret key live in **`C:\ProgramData\DamageTracker\data`**, outside the program folder, so updating or reinstalling the program never touches them. (`C:\ProgramData` is hidden in Explorer by default; type the path into the address bar.)
 
 That folder is **locked against accidental deletion**:
 - Normal accounts, and any program run without "Run as administrator", can only read it.

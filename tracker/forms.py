@@ -64,8 +64,11 @@ class TicketForm(forms.ModelForm):
 
     class Meta:
         model = Ticket
-        fields = ["status", "fault_type", "severity", "fault_description", "work_done", "repair_cost"]
+        fields = ["status", "fault_type", "severity", "previous_job", "fault_description", "work_done", "repair_cost",
+                  "repair_time"]
         widgets = {
+            "previous_job": forms.TextInput(attrs={"placeholder": "Job or event it was last used on"}),
+            "repair_time": forms.NumberInput(attrs={"step": "0.25", "min": "0", "inputmode": "decimal", "placeholder": "e.g. 1.5"}),
             "repair_cost": forms.NumberInput(attrs={"step": "0.01", "min": "0", "inputmode": "decimal", "placeholder": "0.00"}),
             "status": SegmentedRadio,
             "fault_type": SegmentedRadio,
@@ -74,7 +77,7 @@ class TicketForm(forms.ModelForm):
             "work_done": forms.Textarea(attrs={"rows": 3}),
         }
         labels = {"fault_type": "Fault Type", "fault_description": "Fault Description", "work_done": "Work Done",
-                  "repair_cost": "Repair Cost (£)"}
+                  "repair_cost": "Repair Cost (£)", "repair_time": "Repair Time (hours)", "previous_job": "Previous Job"}
 
     def __init__(self, *args, creating=False, **kwargs):
         super().__init__(*args, **kwargs)
@@ -95,6 +98,27 @@ class ItemTypeForm(forms.ModelForm):
         if ItemType.objects.filter(name__iexact=name).exclude(pk=self.instance.pk).exists():
             raise ValidationError("An item type with that name already exists.")
         return name
+
+
+class DocumentForm(forms.Form):
+    file = forms.FileField(label="File")
+    title = forms.CharField(
+        label="Title", max_length=200, required=False,
+        widget=forms.TextInput(attrs={"placeholder": "e.g. User manual (leave blank to use the file name)"}),
+    )
+    attach_to = forms.ChoiceField(
+        label="Show on", choices=[("type", "Every item of this type"), ("item", "This item only")], initial="type",
+        widget=forms.RadioSelect,
+    )
+
+    def __init__(self, *args, item=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        if item is None:
+            del self.fields["attach_to"]
+        else:
+            self.fields["attach_to"].choices = [
+                ("type", f"Every {item.item_type}"), ("item", f"Only this one ({item.serial_number})"),
+            ]
 
 
 class WriteOffForm(forms.Form):
