@@ -64,8 +64,10 @@ class TicketForm(forms.ModelForm):
 
     class Meta:
         model = Ticket
-        fields = ["status", "fault_type", "severity", "fault_description", "work_done", "repair_cost", "repair_time"]
+        fields = ["status", "fault_type", "severity", "previous_job", "fault_description", "work_done", "repair_cost",
+                  "repair_time"]
         widgets = {
+            "previous_job": forms.TextInput(attrs={"placeholder": "Job or event it was last used on"}),
             "repair_time": forms.NumberInput(attrs={"step": "0.25", "min": "0", "inputmode": "decimal", "placeholder": "e.g. 1.5"}),
             "repair_cost": forms.NumberInput(attrs={"step": "0.01", "min": "0", "inputmode": "decimal", "placeholder": "0.00"}),
             "status": SegmentedRadio,
@@ -75,7 +77,7 @@ class TicketForm(forms.ModelForm):
             "work_done": forms.Textarea(attrs={"rows": 3}),
         }
         labels = {"fault_type": "Fault Type", "fault_description": "Fault Description", "work_done": "Work Done",
-                  "repair_cost": "Repair Cost (£)", "repair_time": "Repair Time (hours)"}
+                  "repair_cost": "Repair Cost (£)", "repair_time": "Repair Time (hours)", "previous_job": "Previous Job"}
 
     def __init__(self, *args, creating=False, **kwargs):
         super().__init__(*args, **kwargs)

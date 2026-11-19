@@ -28,7 +28,7 @@ class ReportForm(forms.Form):
     )
     text = forms.CharField(
         required=False, label="Contains text",
-        help_text="Searches fault description, work done, barcode and serial number.",
+        help_text="Searches fault description, work done, previous job, barcode and serial number.",
     )
     include_photos = forms.BooleanField(required=False, label="Include photos")
 
@@ -74,7 +74,7 @@ def filter_tickets(data):
     if data.get("text"):
         t = data["text"].strip()
         tickets = tickets.filter(
-            Q(fault_description__icontains=t) | Q(work_done__icontains=t)
+            Q(fault_description__icontains=t) | Q(work_done__icontains=t) | Q(previous_job__icontains=t)
             | Q(item__barcode__icontains=t) | Q(item__serial_number__icontains=t)
         )
     return tickets
@@ -107,7 +107,7 @@ def _photos(ticket):
 
 
 COLUMNS = ["Ticket", "Created", "Created by", "Status", "Fault Type", "Severity", "Item type", "Barcode",
-           "Serial number", "Fault Description", "Work Done", "Repair cost", "Repair time (hours)", "Comments", "Last updated"]
+           "Serial number", "Previous job", "Fault Description", "Work Done", "Repair cost", "Repair time (hours)", "Comments", "Last updated"]
 
 
 def ticket_row(t):
@@ -121,6 +121,7 @@ def ticket_row(t):
         "Item type": str(t.item.item_type),
         "Barcode": t.item.barcode,
         "Serial number": t.item.serial_number,
+        "Previous job": t.previous_job,
         "Fault Description": t.fault_description,
         "Work Done": t.work_done,
         "Repair cost": t.repair_cost if t.repair_cost is not None else "",
@@ -154,7 +155,7 @@ def build_xlsx(tickets, data):
         cell.fill = PatternFill("solid", fgColor="14213D")
         cell.alignment = Alignment(vertical="center")
     widths = {"Ticket": 10, "Created": 17, "Created by": 14, "Status": 12, "Fault Type": 13, "Severity": 9,
-              "Item type": 20, "Barcode": 15, "Serial number": 15, "Fault Description": 45, "Work Done": 45,
+              "Item type": 20, "Barcode": 15, "Serial number": 15, "Previous job": 22, "Fault Description": 45, "Work Done": 45,
               "Repair cost": 11, "Repair time (hours)": 11, "Comments": 45, "Last updated": 17, "Photos": 8}
     for i, h in enumerate(headers, start=1):
         ws.column_dimensions[get_column_letter(i)].width = widths.get(h, 14)
@@ -322,7 +323,7 @@ def build_pdf(tickets, data):
         pdf.multi_cell(0, 5, clean(f"Created {row['Created']} by {row['Created by'] or '-'}   Last updated {row['Last updated']}"),
                        new_x="LMARGIN", new_y="NEXT")
         pdf.set_text_color(0)
-        for label in ("Fault Description", "Work Done", "Comments"):
+        for label in ("Previous job", "Fault Description", "Work Done", "Comments"):
             if row[label]:
                 pdf.set_font(font, "B", 9)
                 pdf.cell(0, 5, clean(label), new_x="LMARGIN", new_y="NEXT")

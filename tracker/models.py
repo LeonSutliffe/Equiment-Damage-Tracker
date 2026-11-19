@@ -109,6 +109,7 @@ class Ticket(models.Model):
     fault_type = models.CharField(max_length=20, choices=FaultType.choices)
     severity = models.CharField(max_length=10, choices=Severity.choices)
     fault_description = models.TextField(blank=True)
+    previous_job = models.CharField(max_length=200, blank=True)  # job/event the item was last used on
     work_done = models.TextField(blank=True)
     repair_cost = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)]
@@ -127,6 +128,7 @@ class Ticket(models.Model):
         "status": "Status",
         "fault_type": "Fault Type",
         "severity": "Severity",
+        "previous_job": "Previous Job",
         "fault_description": "Fault Description",
         "photos": "Photos",
         "work_done": "Work Done",

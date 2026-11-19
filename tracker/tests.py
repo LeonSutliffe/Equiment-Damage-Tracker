@@ -616,3 +616,33 @@ class DocumentAndRepairTimeTests(TestCase):
         ws = load_workbook(BytesIO(self.client.get(reverse("reports"), {"action": "xlsx"}).content))["Tickets"]
         self.assertIn("Repair time (hours)", [c.value for c in ws[1]])
         self.assertEqual(self.client.get(reverse("reports"), {"action": "pdf"}).status_code, 200)
+
+
+@override_settings(PHOTOS_DIR=Path(TMP_PHOTOS), SECURE_SSL_REDIRECT=False)
+class PreviousJobTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user("leon", password="pw", role=Role.objects.get(name="Admin"))
+        self.item = Item.objects.create(item_type=ItemType.objects.create(name="Drill"), barcode="9001", serial_number="DR-9")
+        self.client.force_login(self.admin)
+
+    def test_previous_job_saved_logged_searched_and_reported(self):
+        self.client.post(reverse("ticket_create", args=[self.item.pk]),
+                         {"fault_type": "functionality", "severity": "medium", "previous_job": "Glastonbury 2026"})
+        t = Ticket.objects.get()
+        self.assertEqual(t.previous_job, "Glastonbury 2026")
+        self.client.post(reverse("ticket_detail", args=[t.number]), {
+            "version": 1, "status": "open", "fault_type": "functionality", "severity": "medium",
+            "previous_job": "Reading Festival"})
+        r = self.client.get(reverse("ticket_history", args=[t.number, "previous_job"]))
+        self.assertContains(r, "Glastonbury 2026")
+        self.assertContains(r, "Reading Festival")
+        r = self.client.get(reverse("home"), {"q": "reading"})
+        self.assertContains(r, t.code)
+        r = self.client.get(reverse("reports"), {"action": "view", "text": "reading"})
+        self.assertEqual(r.context["count"], 1)
+        from openpyxl import load_workbook
+
+        ws = load_workbook(BytesIO(self.client.get(reverse("reports"), {"action": "xlsx"}).content))["Tickets"]
+        col = [c.value for c in ws[1]].index("Previous job")
+        self.assertEqual(ws[2][col].value, "Reading Festival")
+        self.assertContains(self.client.get(reverse("item_timeline", args=[self.item.pk])), "Reading Festival")

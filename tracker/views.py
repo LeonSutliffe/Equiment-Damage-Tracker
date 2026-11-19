@@ -126,6 +126,8 @@ def item_timeline(request, pk):
                 f"{Item.TRACKED_FIELDS.get(c.field, c.field)} changed from {c.old_value or '(blank)'} to {c.new_value or '(blank)'}")
     for t in tickets:
         desc = f": {t.fault_description}" if t.fault_description else ""
+        if t.previous_job:
+            desc += f" (previous job: {t.previous_job})"
         add(t.created_at, t.created_by, "opened",
             f"Fault logged, {t.get_fault_type_display()}, {t.get_severity_display()} severity{desc}", t)
     changes = FieldChange.objects.filter(ticket__in=tickets).exclude(note="created").select_related("user")
@@ -273,7 +275,8 @@ def ticket_detail(request, number):
         form = TicketForm(request.POST, request.FILES, instance=Ticket.objects.get(pk=ticket.pk))
         if form.is_valid():
             data = {f: form.cleaned_data[f] for f in
-                    ("status", "fault_type", "severity", "fault_description", "work_done", "repair_cost", "repair_time")}
+                    ("status", "fault_type", "severity", "previous_job", "fault_description", "work_done", "repair_cost",
+                     "repair_time")}
             try:
                 ticket, changed = update_ticket(
                     ticket, request.user, data, form.cleaned_data.get("version") or 0, form.cleaned_data.get("photos", [])
