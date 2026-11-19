@@ -256,3 +256,22 @@ form.inline { display: inline; margin-left: 8px; }
 .field-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
 @media (max-width: 420px) { .field-checks { grid-template-columns: 1fr; } }
 .dialog-buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+
+/* Comment editing / removal and permanent deletion */
+.comment.removed .when { font-style: italic; }
+.comment .edited { margin-left: 6px; color: var(--muted); }
+.comment-actions { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; margin-top: 4px; font-size: .85rem; }
+.comment-actions form.inline { margin-left: 0; }
+.comment-actions button.link, .comment .edited { padding: 0; font-size: .85rem; }
+.comment-edit summary { color: var(--primary); text-decoration: underline; }
+.comment-actions:empty { display: none; }
+.comment-edit summary { cursor: pointer; list-style: none; }
+.comment-edit summary::-webkit-details-marker { display: none; }
+.comment-edit[open] { flex-basis: 100%; }
+.comment-edit form { margin-top: 6px; }
+.comment-edit textarea { width: 100%; }
+.danger-zone { margin-top: 24px; text-align: right; }
+.confirm-delete ul { margin: 6px 0 12px 20px; }
+.timeline .tl-removed::before { border-color: var(--danger); }
+.settings-explain { margin: 8px 0 16px 18px; font-size: .9rem; }
+.settings-explain li { margin-bottom: 6px; }

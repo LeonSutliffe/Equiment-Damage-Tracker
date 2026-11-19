@@ -730,3 +730,152 @@ class CheckMeLabelTests(TestCase):
         from .labels import build_labels_pdf
 
         self.assertGreater(len(build_labels_pdf([], fill_templates=True, template_severity="checkme", start_at=60)), 1000)
+
+
+@override_settings(PHOTOS_DIR=Path(TMP_PHOTOS), DOCUMENTS_DIR=Path(TMP_DOCS), SECURE_SSL_REDIRECT=False)
+class DeletionAndCommentEditTests(TestCase):
+    def setUp(self):
+        from .models import Comment
+
+        self.user = User.objects.create_user("jsmith", password="pw", display_name="J. Smith",
+                                             role=Role.objects.get(name="User"))
+        self.other = User.objects.create_user("abrown", password="pw", role=Role.objects.get(name="User"))
+        self.admin = User.objects.create_user("leon", password="pw", display_name="Leon",
+                                              role=Role.objects.get(name="Admin"))
+        self.item = Item.objects.create(item_type=ItemType.objects.create(name="Ladder"), barcode="501",
+                                        serial_number="LD-1")
+        self.ticket = create_ticket(self.item, self.user, {"fault_type": "safety", "severity": "high",
+                                                           "fault_description": "Rung cracked"}, [jpeg()])
+        self.comment = Comment.objects.create(ticket=self.ticket, user=self.user, text="Frist look")
+
+    def audit(self, kind):
+        from accounts.models import AuditEvent
+
+        return list(AuditEvent.objects.filter(kind=kind).values_list("text", flat=True))
+
+    def timeline(self):
+        r = self.client.get(reverse("item_timeline", args=[self.item.pk]))
+        return " | ".join(e["text"] for e in r.context["events"])
+
+    # ---- comment editing
+    def test_author_can_edit_and_old_version_is_kept(self):
+        self.client.force_login(self.user)
+        self.client.post(reverse("comment_edit", args=[self.comment.pk]), {"text": "First look"})
+        self.comment.refresh_from_db()
+        self.assertEqual(self.comment.text, "First look")
+        self.assertIsNotNone(self.comment.edited_at)
+        page = self.client.get(reverse("ticket_detail", args=[self.ticket.number]))
+        self.assertContains(page, "(edited")
+        hist = self.client.get(reverse("comment_history", args=[self.comment.pk]))
+        self.assertContains(hist, "Frist look")
+        self.assertContains(hist, "First look")
+        self.assertIn("Comment edited: “Frist look” → “First look”", self.timeline())
+
+    def test_others_cannot_edit(self):
+        for who in (self.other, self.admin):
+            self.client.force_login(who)
+            r = self.client.post(reverse("comment_edit", args=[self.comment.pk]), {"text": "hacked"})
+            self.assertEqual(r.status_code, 403)
+        self.comment.refresh_from_db()
+        self.assertEqual(self.comment.text, "Frist look")
+
+    # ---- visible removal (switch off)
+    def test_user_cannot_remove(self):
+        self.client.force_login(self.user)
+        self.assertEqual(self.client.post(reverse("comment_remove", args=[self.comment.pk])).status_code, 403)
+
+    def test_admin_removal_is_visible(self):
+        self.client.force_login(self.admin)
+        self.client.post(reverse("comment_remove", args=[self.comment.pk]))
+        self.comment.refresh_from_db()
+        self.assertIsNotNone(self.comment.removed_at)
+        page = self.client.get(reverse("ticket_detail", args=[self.ticket.number]))
+        self.assertContains(page, "removed by Leon")
+        self.assertNotContains(page, "Frist look")
+        self.assertIn("Comment by J. Smith removed", self.timeline())
+        self.assertTrue(self.audit("comment"))
+        self.assertFalse(self.audit("deletion"))
+
+    def test_permanent_needs_switch(self):
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get(reverse("ticket_delete", args=[self.ticket.number])).status_code, 403)
+        self.assertEqual(self.client.post(reverse("item_delete", args=[self.item.pk]), {"confirm": "1"}).status_code, 403)
+        self.assertTrue(Ticket.objects.filter(pk=self.ticket.pk).exists())
+
+    def switch_on(self):
+        self.client.force_login(self.admin)
+        self.client.post(reverse("my_settings"), {"allow_permanent_delete": "1"})
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.allow_permanent_delete)
+        self.assertEqual(len(self.audit("settings")), 1)
+
+    def test_settings_page_admin_only(self):
+        self.client.force_login(self.user)
+        self.assertEqual(self.client.get(reverse("my_settings")).status_code, 403)
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(reverse("my_settings")), "Allow permanent deletions")
+
+    # ---- permanent deletion (switch on)
+    def test_permanent_comment_delete_leaves_no_history(self):
+        from .models import Comment
+
+        self.switch_on()
+        self.client.post(reverse("comment_remove", args=[self.comment.pk]))
+        self.assertFalse(Comment.objects.exists())
+        self.assertNotIn("Frist look", self.timeline())
+        self.assertNotIn("removed", self.timeline())
+        self.assertIn("Frist look", self.audit("deletion")[0])
+
+    def test_ticket_delete_needs_tick_then_erases_everything(self):
+        self.switch_on()
+        photo = self.ticket.photos.get()
+        files = [Path(TMP_PHOTOS) / photo.file_name, Path(TMP_PHOTOS) / photo.thumbnail_file_name]
+        self.assertTrue(all(f.is_file() for f in files))
+        url = reverse("ticket_delete", args=[self.ticket.number])
+        self.assertContains(self.client.get(url), "can't be undone")
+        self.assertContains(self.client.post(url, {}), "Tick the box")
+        self.assertTrue(Ticket.objects.filter(pk=self.ticket.pk).exists())
+        r = self.client.post(url, {"confirm": "1"})
+        self.assertRedirects(r, reverse("item_detail", args=[self.item.pk]))
+        self.assertFalse(Ticket.objects.exists())
+        self.assertFalse(Photo.objects.exists())
+        self.assertFalse(FieldChange.objects.exists())
+        self.assertFalse(any(f.exists() and f.stat().st_size for f in files))
+        self.assertNotIn("Rung cracked", self.timeline())
+        self.assertIn(self.ticket.code, self.audit("deletion")[0])
+
+    def test_photo_delete(self):
+        self.switch_on()
+        photo = self.ticket.photos.get()
+        self.client.post(reverse("photo_delete", args=[photo.pk]))
+        self.assertFalse(Photo.objects.exists())
+        self.assertFalse(FieldChange.objects.filter(field="photos").exists())
+        self.assertEqual(len(self.audit("deletion")), 1)
+
+    def test_item_delete(self):
+        from .models import Document
+
+        self.switch_on()
+        self.client.post(reverse("document_add_item", args=[self.item.pk]),
+                         {"file": SimpleUploadedFile("m.pdf", b"%PDF-1.4", content_type="application/pdf"),
+                          "title": "Manual", "attach_to": "item"})
+        doc = Document.objects.get()
+        url = reverse("item_delete", args=[self.item.pk])
+        self.assertRedirects(self.client.post(url, {"confirm": "1"}), reverse("item_list"))
+        self.assertFalse(Item.objects.exists())
+        self.assertFalse(ItemChange.objects.exists())
+        self.assertFalse(Document.objects.exists())
+        self.assertFalse((Path(TMP_DOCS) / doc.file_name).exists())
+        self.assertIn("LD-1", self.audit("deletion")[0])
+
+    def test_erase_file_empties_when_delete_refused(self):
+        from unittest import mock
+
+        from .deletion import erase_file
+
+        path = Path(TMP_PHOTOS) / "locked.jpg"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"secret")
+        with mock.patch.object(Path, "unlink", side_effect=PermissionError):
+            erase_file(path)
+        self.assertEqual(path.read_bytes(), b"")

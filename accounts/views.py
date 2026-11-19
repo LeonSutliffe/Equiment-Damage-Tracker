@@ -172,3 +172,17 @@ def audit_log(request):
         "users": User.objects.order_by("username"),
         "filter_query": urlencode({k: v for k, v in filters.items() if v}),
     })
+
+
+@require_perm("delete_records")
+def my_settings(request):
+    """Personal settings. For now: the admin's own 'Allow permanent deletions' switch."""
+    user = request.user
+    if request.method == "POST":
+        on = request.POST.get("allow_permanent_delete") == "1"
+        if on != user.allow_permanent_delete:
+            User.objects.filter(pk=user.pk).update(allow_permanent_delete=on)
+            record(request, "settings", f"{'Switched on' if on else 'Switched off'} “Allow permanent deletions”")
+            messages.success(request, "Permanent deletions are now " + ("ON. Be careful." if on else "off."))
+        return redirect("my_settings")
+    return render(request, "accounts/settings.html", {})

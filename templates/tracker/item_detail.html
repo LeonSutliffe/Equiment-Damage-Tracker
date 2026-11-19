@@ -25,6 +25,7 @@
     <a class="btn" href="{% url 'item_timeline' item.pk %}">Item history</a>
     {% if perms_ok.edit_item %}<a class="btn" href="{% url 'item_edit' item.pk %}">Edit item</a>{% endif %}
     {% if perms_ok.write_off_item and not item.is_written_off %}<a class="btn danger-outline" href="{% url 'item_write_off' item.pk %}">Write off</a>{% endif %}
+    {% if can_delete_permanently %}<a class="btn danger-outline" href="{% url 'item_delete' item.pk %}">Delete permanently…</a>{% endif %}
   </div>
 </div>
 

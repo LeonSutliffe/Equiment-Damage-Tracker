@@ -1,0 +1,10 @@
+<h2>Comment history</h2>
+<p class="muted small">Every version of this comment, newest first.</p>
+<ol class="history">
+  {% for v in versions %}
+  <li>
+    <div class="when">{{ v.when|date:"j M Y H:i" }} <span class="who">{{ v.who.label|default:"(deleted user)" }}</span> <span class="note">{{ v.note }}</span>{% if forloop.first %} <span class="note">current</span>{% endif %}</div>
+    <div class="value">“{{ v.text|linebreaksbr }}”</div>
+  </li>
+  {% endfor %}
+</ol>
