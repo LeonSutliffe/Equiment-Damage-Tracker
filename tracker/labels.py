@@ -24,6 +24,8 @@ COLOURS = {
     Ticket.Severity.LOW: ((250, 204, 21), (255, 248, 204), (30, 30, 30)),
     "resolved": ((22, 130, 72), (220, 245, 228), (255, 255, 255)),  # resolved tickets, whatever the severity
     "none": ((90, 98, 112), (238, 240, 243), (255, 255, 255)),
+    # "Check me": put on a device that needs checking before any ticket exists.
+    "checkme": ((236, 0, 140), (253, 222, 239), (255, 255, 255)),
 }
 # Word printed on the right of the coloured band.
 BAND_WORDS = {**{v: label.upper() for v, label in Ticket.Severity.choices}, "resolved": "RESOLVED"}
@@ -97,8 +99,33 @@ def build_labels_pdf(tickets, fill_templates=False, template_severity="none", st
         pdf.set_fill_color(255, 255, 255)
         pdf.rect(x, y, w, h, style="DF")
 
+    def check_me_label(x, y):
+        """Bright pink: CHECK ME, a date box in the band, then Issued by and Issue write-in boxes."""
+        strong, pale, on_band = COLOURS["checkme"]
+        band(x, y, "checkme", "CHECK ME")
+        # Date box in the band, with a faint "date" hint inside it.
+        date_w = 11.0
+        date_x = x + LABEL_W - PAD - date_w
+        write_box(date_x, y + 0.8, date_w, 4.4, strong)
+        pdf.set_font(font, "", 4)
+        pdf.set_text_color(170, 170, 170)
+        pdf.set_xy(date_x + 0.4, y + 0.9)
+        pdf.cell(6, 1.8, "date")
+        head_w = 11.6
+        for i, heading in enumerate(("Issued by", "Issue")):
+            row_y = y + 7.0 + i * 6.4
+            pdf.set_font(font, "B", 5)
+            pdf.set_text_color(70, 70, 70)
+            pdf.set_xy(x + PAD, row_y)
+            pdf.cell(head_w, 5.6, heading)
+            write_box(x + PAD + head_w, row_y, LABEL_W - 2 * PAD - head_w, 5.6, strong)
+        pdf.set_text_color(20, 20, 20)
+
     def template_label(x, y, severity):
         """A blank label to fill in by hand: ticket number in the band, then Barcode and Serial boxes."""
+        if severity == "checkme":
+            check_me_label(x, y)
+            return
         band(x, y, severity, "")
         strong, _, on_band = COLOURS.get(severity, COLOURS["none"])
         # Box outlines: yellow is too faint on pale yellow, so use a darker gold for Low.
