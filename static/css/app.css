@@ -246,3 +246,13 @@ form.inline { display: inline; margin-left: 8px; }
 .doc-add .label { display: block; font-weight: 600; margin-bottom: 4px; }
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
 @media (max-width: 420px) { .two-col { grid-template-columns: 1fr; } }
+
+/* Reports: choose fields popup */
+.field-chooser { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 4px 0 12px; }
+.fields-dialog { max-width: 520px; width: calc(100% - 32px); border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--card); color: var(--text); padding: 16px; }
+.fields-dialog::backdrop { background: rgba(0, 0, 0, .45); }
+.fields-dialog h2 { margin-top: 0; }
+.field-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+@media (max-width: 420px) { .field-checks { grid-template-columns: 1fr; } }
+.dialog-buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 12px; }

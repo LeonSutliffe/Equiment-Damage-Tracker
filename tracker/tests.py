@@ -646,3 +646,42 @@ class PreviousJobTests(TestCase):
         col = [c.value for c in ws[1]].index("Previous job")
         self.assertEqual(ws[2][col].value, "Reading Festival")
         self.assertContains(self.client.get(reverse("item_timeline", args=[self.item.pk])), "Reading Festival")
+
+
+@override_settings(PHOTOS_DIR=Path(TMP_PHOTOS), SECURE_SSL_REDIRECT=False)
+class ReportFieldChoiceTests(TestCase):
+    def setUp(self):
+        admin = User.objects.create_user("leon", password="pw", role=Role.objects.get(name="Admin"))
+        item = Item.objects.create(item_type=ItemType.objects.create(name="Drill"), barcode="9001", serial_number="DR-9")
+        create_ticket(item, admin, {"fault_type": "safety", "severity": "high", "fault_description": "Chuck loose",
+                                    "previous_job": "Secret job", "repair_cost": "12"})
+        self.client.force_login(admin)
+
+    def xlsx_headers(self, params):
+        from openpyxl import load_workbook
+
+        r = self.client.get(reverse("reports"), {"action": "xlsx"} | params)
+        ws = load_workbook(BytesIO(r.content))["Tickets"]
+        return [c.value for c in ws[1]], ws
+
+    def test_only_chosen_fields_exported(self):
+        headers, ws = self.xlsx_headers({"fields_set": "1", "fields": ["Severity", "Repair cost"]})
+        self.assertEqual(headers, ["Ticket", "Severity", "Repair cost"])
+        self.assertEqual(ws["C4"].value, "=SUM(C2:C2)")
+        # Without a choice (e.g. an old link) everything is included.
+        headers, _ = self.xlsx_headers({})
+        self.assertIn("Previous job", headers)
+        self.assertIn("Photos", headers)
+        # PDF leaves unchosen fields out.
+        r = self.client.get(reverse("reports"), {"action": "pdf", "fields_set": "1", "fields": ["Severity"]})
+        self.assertEqual(r.status_code, 200)
+
+    def test_none_chosen_is_refused(self):
+        r = self.client.get(reverse("reports"), {"action": "xlsx", "fields_set": "1"})
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, "Choose at least one field")
+
+    def test_reports_page_has_chooser(self):
+        r = self.client.get(reverse("reports"))
+        self.assertContains(r, 'id="fields-dialog"')
+        self.assertContains(r, 'value="Previous job"')

@@ -8,7 +8,7 @@
     <div class="field"><label for="{{ form.created_from.id_for_label }}">{{ form.created_from.label }}</label>{{ form.created_from }}</div>
     <div class="field"><label for="{{ form.created_to.id_for_label }}">{{ form.created_to.label }}</label>{{ form.created_to }}</div>
   </div>
-  {% for field in form %}{% if field.widget_type == "checkboxselectmultiple" %}
+  {% for field in form %}{% if field.widget_type == "checkboxselectmultiple" and field.name != "fields" %}
     <fieldset class="chip-group">
       <legend>{{ field.label }} <span class="muted small">(none ticked = all)</span></legend>
       {% for cb in field %}<label class="chip-check">{{ cb.tag }}<span>{{ cb.choice_label }}</span></label>{% empty %}<span class="muted small">None set up yet.</span>{% endfor %}
@@ -16,6 +16,23 @@
   {% endif %}{% endfor %}
   <div class="field"><label for="{{ form.text.id_for_label }}">{{ form.text.label }}</label>{{ form.text }}<small class="help">{{ form.text.help_text }}</small></div>
   <label class="check">{{ form.include_photos }} {{ form.include_photos.label }}</label>
+  <div class="field-chooser">
+    <button type="button" class="btn" data-fields-open>Choose fields…</button>
+    <span class="muted small" data-fields-summary></span>
+  </div>
+  {{ form.fields_set }}
+  <dialog id="fields-dialog" class="fields-dialog">
+    <h2>Fields to include</h2>
+    <p class="muted small">Ticket number is always included. Your choice is remembered on this device.</p>
+    <div class="field-checks">
+      {% for cb in form.fields %}<label class="check">{{ cb.tag }} {{ cb.choice_label }}</label>{% endfor %}
+    </div>
+    <div class="dialog-buttons">
+      <button type="button" class="btn small" data-fields-all>Select all</button>
+      <button type="button" class="btn small" data-fields-none>Select none</button>
+      <button type="button" class="btn primary" data-fields-close>Done</button>
+    </div>
+  </dialog>
   <div class="report-actions">
     <button class="btn" name="action" value="view">Show on screen</button>
     <button class="btn primary" name="action" value="xlsx">Download spreadsheet</button>
