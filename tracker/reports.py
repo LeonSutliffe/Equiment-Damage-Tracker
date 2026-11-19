@@ -53,7 +53,7 @@ class ReportForm(forms.Form):
     )
     template_colour = forms.ChoiceField(
         required=False, label="Write-in label colour",
-        choices=[("none", "Grey")] + [(v, l) for v, l in Ticket.Severity.choices],
+        choices=[("none", "Grey")] + [(v, l) for v, l in Ticket.Severity.choices] + [("resolved", "Green (resolved)")],
     )
     label_outlines = forms.BooleanField(required=False, label="Draw label outlines (for a test print on plain paper)")
 
