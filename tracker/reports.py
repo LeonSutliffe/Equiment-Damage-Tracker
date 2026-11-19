@@ -10,7 +10,7 @@ from django.utils import timezone
 
 from .models import ItemType, Ticket, format_cost, format_hours
 
-COLUMNS = ["Ticket", "Created", "Created by", "Status", "Fault Type", "Severity", "Item type", "Barcode",
+COLUMNS = ["Ticket", "Created", "Created by", "Status", "Fault Type", "Severity", "Item type", "Manufacturer", "Model name", "Barcode",
            "Serial number", "Previous job", "Fault Description", "Work Done", "Repair cost", "Repair time (hours)",
            "Comments", "Last updated"]
 # Everything except the ticket number (always included) can be left out of exports.
@@ -136,6 +136,8 @@ def ticket_row(t):
         "Fault Type": t.get_fault_type_display(),
         "Severity": t.get_severity_display(),
         "Item type": str(t.item.item_type),
+        "Manufacturer": t.item.item_type.manufacturer,
+        "Model name": t.item.item_type.name,
         "Barcode": t.item.barcode,
         "Serial number": t.item.serial_number,
         "Previous job": t.previous_job,
@@ -173,7 +175,7 @@ def build_xlsx(tickets, data):
         cell.fill = PatternFill("solid", fgColor="14213D")
         cell.alignment = Alignment(vertical="center")
     widths = {"Ticket": 10, "Created": 17, "Created by": 14, "Status": 12, "Fault Type": 13, "Severity": 9,
-              "Item type": 20, "Barcode": 15, "Serial number": 15, "Previous job": 22, "Fault Description": 45, "Work Done": 45,
+              "Item type": 28, "Manufacturer": 16, "Model name": 20, "Barcode": 15, "Serial number": 15, "Previous job": 22, "Fault Description": 45, "Work Done": 45,
               "Repair cost": 11, "Repair time (hours)": 11, "Comments": 45, "Last updated": 17, "Photos": 8}
     for i, h in enumerate(headers, start=1):
         ws.column_dimensions[get_column_letter(i)].width = widths.get(h, 14)

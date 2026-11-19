@@ -54,8 +54,9 @@ def search(raw_query):
     # Partial match on barcode/serial, or an item type name.
     result.items = list(
         Item.objects.select_related("item_type")
-        .filter(Q(barcode__icontains=query) | Q(serial_number__icontains=query) | Q(item_type__name__icontains=query))
-        .order_by("item_type__name", "serial_number")[:50]
+        .filter(Q(barcode__icontains=query) | Q(serial_number__icontains=query) | Q(item_type__name__icontains=query)
+                | Q(item_type__manufacturer__icontains=query))
+        .order_by("item_type__manufacturer", "item_type__name", "serial_number")[:50]
     )
     # Tickets whose previous job matches (e.g. "Glastonbury").
     if len(query) >= 2:

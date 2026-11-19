@@ -91,13 +91,21 @@ class TicketForm(forms.ModelForm):
 class ItemTypeForm(forms.ModelForm):
     class Meta:
         model = ItemType
-        fields = ["name", "description", "active"]
+        fields = ["manufacturer", "name", "description", "active"]
+        labels = {"name": "Model name"}
+        widgets = {"manufacturer": forms.TextInput(attrs={"placeholder": "e.g. Zarges"}),
+                   "name": forms.TextInput(attrs={"placeholder": "e.g. Step ladder 3m"})}
 
-    def clean_name(self):
-        name = self.cleaned_data["name"].strip()
-        if ItemType.objects.filter(name__iexact=name).exclude(pk=self.instance.pk).exists():
-            raise ValidationError("An item type with that name already exists.")
-        return name
+    def clean(self):
+        data = super().clean()
+        maker = (data.get("manufacturer") or "").strip()
+        name = (data.get("name") or "").strip()
+        data["manufacturer"], data["name"] = maker, name
+        if name and ItemType.objects.filter(manufacturer__iexact=maker, name__iexact=name).exclude(
+            pk=self.instance.pk
+        ).exists():
+            raise ValidationError(f"There is already an item type {(maker + ' ' + name).strip()}.")
+        return data
 
 
 class DocumentForm(forms.Form):

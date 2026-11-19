@@ -685,3 +685,34 @@ class ReportFieldChoiceTests(TestCase):
         r = self.client.get(reverse("reports"))
         self.assertContains(r, 'id="fields-dialog"')
         self.assertContains(r, 'value="Previous job"')
+
+
+@override_settings(PHOTOS_DIR=Path(TMP_PHOTOS), SECURE_SSL_REDIRECT=False)
+class ManufacturerTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user("leon", password="pw", role=Role.objects.get(name="Admin"))
+        self.client.force_login(self.admin)
+
+    def test_manufacturer_and_model_name(self):
+        r = self.client.post(reverse("item_type_create"), {"manufacturer": "Zarges", "name": "Step ladder 3m", "active": "on"})
+        self.assertRedirects(r, reverse("item_type_list"))
+        t = ItemType.objects.get()
+        self.assertEqual(str(t), "Zarges Step ladder 3m")
+        # Same model name from another manufacturer is fine; an exact repeat is not.
+        self.client.post(reverse("item_type_create"), {"manufacturer": "Werner", "name": "Step ladder 3m", "active": "on"})
+        r = self.client.post(reverse("item_type_create"), {"manufacturer": "zarges", "name": "step ladder 3M", "active": "on"})
+        self.assertContains(r, "There is already an item type")
+        self.assertEqual(ItemType.objects.count(), 2)
+        self.assertContains(self.client.get(reverse("item_type_create")), "Model name")
+        item = Item.objects.create(item_type=t, barcode="77", serial_number="Z-1")
+        create_ticket(item, self.admin, {"fault_type": "safety", "severity": "high"})
+        self.assertContains(self.client.get(reverse("item_detail", args=[item.pk])), "Zarges Step ladder 3m")
+        r = self.client.get(reverse("home"), {"q": "zarg"})
+        self.assertContains(r, "Z-1")
+        from openpyxl import load_workbook
+
+        ws = load_workbook(BytesIO(self.client.get(reverse("reports"), {"action": "xlsx"}).content))["Tickets"]
+        headers = [c.value for c in ws[1]]
+        self.assertEqual(ws[2][headers.index("Manufacturer")].value, "Zarges")
+        self.assertEqual(ws[2][headers.index("Model name")].value, "Step ladder 3m")
+        self.assertEqual(ws[2][headers.index("Item type")].value, "Zarges Step ladder 3m")
