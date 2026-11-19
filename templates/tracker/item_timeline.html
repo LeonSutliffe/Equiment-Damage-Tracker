@@ -11,6 +11,7 @@
   <div><span class="stat">{{ summary.tickets }}</span> ticket{{ summary.tickets|pluralize }}</div>
   <div><span class="stat">{{ summary.open }}</span> open</div>
   <div><span class="stat">{% if summary.total_cost is not None %}£{{ summary.total_cost|floatformat:"2g" }}{% else %}£0.00{% endif %}</span> repair costs</div>
+  <div><span class="stat">{{ summary.total_hours|default:0|floatformat:"-2" }} h</span> repair time</div>
   {% if summary.faults %}<div>{% for label, n in summary.faults %}<span class="chip">{{ label }} × {{ n }}</span> {% endfor %}</div>{% endif %}
   {% if summary.first %}<div class="muted small">First fault {{ summary.first|date:"j M Y" }}{% if summary.tickets > 1 %}, latest {{ summary.last|date:"j M Y" }}{% endif %}</div>{% endif %}
 </div>
@@ -18,7 +19,7 @@
 {% if tickets %}
 <h2>Tickets</h2>
 <table class="list">
-  <thead><tr><th>Ticket</th><th>Opened</th><th>Status</th><th>Fault</th><th>Severity</th><th>Cost</th><th>Description</th></tr></thead>
+  <thead><tr><th>Ticket</th><th>Opened</th><th>Status</th><th>Fault</th><th>Severity</th><th>Cost</th><th>Time</th><th>Description</th></tr></thead>
   <tbody>
   {% for t in tickets %}
     <tr data-href="{% url 'ticket_detail' t.number %}">
@@ -27,6 +28,7 @@
       <td><span class="badge {{ t.status }}">{{ t.get_status_display }}</span></td>
       <td>{{ t.get_fault_type_display }}</td><td>{{ t.get_severity_display }}</td>
       <td>{% if t.repair_cost is not None %}£{{ t.repair_cost|floatformat:"2g" }}{% endif %}</td>
+      <td>{% if t.repair_time is not None %}{{ t.repair_time|floatformat:"-2" }} h{% endif %}</td>
       <td>{{ t.fault_description|truncatechars:70 }}</td>
     </tr>
   {% endfor %}

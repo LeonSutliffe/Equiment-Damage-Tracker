@@ -38,11 +38,11 @@
 </form>
 
 {% if results %}
-  <h2>{{ count }} ticket{{ count|pluralize }}{% if total_cost is not None %} · repair costs £{{ total_cost|floatformat:"2g" }}{% endif %}</h2>
+  <h2>{{ count }} ticket{{ count|pluralize }}{% if total_cost is not None %} · repair costs £{{ total_cost|floatformat:"2g" }}{% endif %}{% if total_hours is not None %} · repair time {{ total_hours|floatformat:"-2" }} h{% endif %}</h2>
   <p class="muted small">{% for label, value in filters %}{{ label }}: {{ value }}{% if not forloop.last %} · {% endif %}{% endfor %}</p>
   {% include "tracker/_bulk_bar.html" %}
   <table class="list">
-    <thead><tr>{% if bulk_form %}<th></th>{% endif %}<th>Ticket</th><th>Created</th><th>Item</th><th>Status</th><th>Fault</th><th>Severity</th><th>Cost</th><th>Description</th></tr></thead>
+    <thead><tr>{% if bulk_form %}<th></th>{% endif %}<th>Ticket</th><th>Created</th><th>Item</th><th>Status</th><th>Fault</th><th>Severity</th><th>Cost</th><th>Time</th><th>Description</th></tr></thead>
     <tbody>
     {% for t in tickets %}
       <tr data-href="{% url 'ticket_detail' t.number %}">
@@ -53,9 +53,10 @@
         <td><span class="badge {{ t.status }}">{{ t.get_status_display }}</span></td>
         <td>{{ t.get_fault_type_display }}</td><td>{{ t.get_severity_display }}</td>
         <td>{% if t.repair_cost is not None %}£{{ t.repair_cost|floatformat:"2g" }}{% endif %}</td>
+        <td>{% if t.repair_time is not None %}{{ t.repair_time|floatformat:"-2" }} h{% endif %}</td>
         <td>{{ t.fault_description|truncatechars:60 }}</td>
       </tr>
-    {% empty %}<tr><td colspan="9">No tickets match these filters.</td></tr>{% endfor %}
+    {% empty %}<tr><td colspan="10">No tickets match these filters.</td></tr>{% endfor %}
     </tbody>
   </table>
   {% if count > 200 %}<p class="muted small">Showing the first 200. Downloads include all {{ count }}.</p>{% endif %}

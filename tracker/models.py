@@ -16,6 +16,19 @@ def format_cost(value):
         return str(value)
 
 
+def format_hours(value):
+    """2.5 -> "2.5 h"; blank stays blank."""
+    if value in ("", None):
+        return ""
+    try:
+        from decimal import Decimal
+
+        text = f"{Decimal(str(value)):.2f}".rstrip("0").rstrip(".")
+        return f"{text} h"
+    except Exception:  # noqa: BLE001
+        return str(value)
+
+
 class ItemType(models.Model):
     """A kind of item shared by many units, e.g. "Step ladder 3m"."""
 
@@ -100,6 +113,9 @@ class Ticket(models.Model):
     repair_cost = models.DecimalField(
         max_digits=10, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)]
     )
+    repair_time = models.DecimalField(  # hours spent on the repair
+        max_digits=7, decimal_places=2, null=True, blank=True, validators=[MinValueValidator(0)]
+    )
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(default=timezone.now)
@@ -115,6 +131,7 @@ class Ticket(models.Model):
         "photos": "Photos",
         "work_done": "Work Done",
         "repair_cost": "Repair Cost",
+        "repair_time": "Repair Time",
     }
 
     class Meta:
@@ -145,6 +162,8 @@ class Ticket(models.Model):
                 return raw
         if field == "repair_cost" and raw not in ("", None):
             return format_cost(raw)
+        if field == "repair_time" and raw not in ("", None):
+            return format_hours(raw)
         return raw
 
 
@@ -169,6 +188,47 @@ class Photo(models.Model):
     @property
     def label(self):
         return f"Photo {self.pk}" + (f" ({self.original_name})" if self.original_name else "")
+
+
+class Document(models.Model):
+    """A manual, spec sheet, certificate or other file.
+
+    Attached either to an item type (shown on every item of that type) or to one item.
+    Removing it only hides it; the file is kept and the removal is logged.
+    """
+
+    item_type = models.ForeignKey(ItemType, null=True, blank=True, on_delete=models.PROTECT, related_name="documents")
+    item = models.ForeignKey(Item, null=True, blank=True, on_delete=models.PROTECT, related_name="documents")
+    title = models.CharField(max_length=200)
+    file_name = models.CharField(max_length=100)
+    original_name = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=100)
+    size = models.PositiveBigIntegerField(default=0)
+    uploaded_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name="+")
+    uploaded_at = models.DateTimeField(default=timezone.now)
+    removed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    removed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["title", "id"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(item_type__isnull=False, item__isnull=True)
+                | models.Q(item_type__isnull=True, item__isnull=False),
+                name="document_belongs_to_type_or_item",
+            )
+        ]
+
+    def __str__(self):
+        return self.title
+
+    @property
+    def extension(self):
+        return self.original_name.rsplit(".", 1)[-1].upper() if "." in self.original_name else ""
+
+    @property
+    def owner_label(self):
+        return f"all {self.item_type}" if self.item_type_id else str(self.item)
 
 
 class FieldChange(models.Model):

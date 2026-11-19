@@ -72,19 +72,20 @@ def main(src, dst):
         if sha256(key) != sha256(dst / "secret_key.txt"):
             fail("secret key copy doesn't match")
 
-    # 3. Photos.
-    src_photos, dst_photos = src / "photos", dst / "photos"
-    dst_photos.mkdir(exist_ok=True)
-    files = [p for p in src_photos.rglob("*") if p.is_file()] if src_photos.is_dir() else []
-    total = 0
-    for p in files:
-        out = dst_photos / p.relative_to(src_photos)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(p, out)
-        if p.stat().st_size != out.stat().st_size or sha256(p) != sha256(out):
-            fail(f"photo {p.name} didn't copy correctly")
-        total += p.stat().st_size
-    print(f"Photos copied and checked: {len(files)} files, {total / 1024 / 1024:.1f} MB.")
+    # 3. Photos and documents.
+    for folder in ("photos", "documents"):
+        src_dir, dst_dir = src / folder, dst / folder
+        dst_dir.mkdir(exist_ok=True)
+        files = [p for p in src_dir.rglob("*") if p.is_file()] if src_dir.is_dir() else []
+        total = 0
+        for p in files:
+            out = dst_dir / p.relative_to(src_dir)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(p, out)
+            if p.stat().st_size != out.stat().st_size or sha256(p) != sha256(out):
+                fail(f"{folder} file {p.name} didn't copy correctly")
+            total += p.stat().st_size
+        print(f"{folder.capitalize()} copied and checked: {len(files)} files, {total / 1024 / 1024:.1f} MB.")
     print("COPY VERIFIED")
 
 

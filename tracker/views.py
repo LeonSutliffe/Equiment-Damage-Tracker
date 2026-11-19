@@ -13,8 +13,24 @@ from django.views.decorators.http import require_POST
 from accounts.audit import record
 from accounts.permissions import require_perm
 
-from .forms import BulkTicketForm, ItemForm, ItemTypeForm, TicketForm, WriteOffForm
-from .models import Comment, FieldChange, Item, ItemChange, ItemType, Photo, Ticket
+from .forms import (
+    BulkTicketForm,
+    DocumentForm,
+    ItemForm,
+    ItemTypeForm,
+    TicketForm,
+    WriteOffForm,
+)
+from .models import (
+    Comment,
+    Document,
+    FieldChange,
+    Item,
+    ItemChange,
+    ItemType,
+    Photo,
+    Ticket,
+)
 from .search import search
 from .services import (
     ConflictError,
@@ -76,7 +92,18 @@ def item_list(request):
 def item_detail(request, pk):
     item = get_object_or_404(Item.objects.select_related("item_type", "written_off_by"), pk=pk)
     tickets = item.tickets.all().order_by("-created_at")
-    return render(request, "tracker/item_detail.html", {"item": item, "tickets": tickets})
+    documents = Document.objects.filter(removed_at__isnull=True).filter(
+        Q(item=item) | Q(item_type_id=item.item_type_id)
+    ).order_by("item_id", "title")  # type documents first
+    doc_form = DocumentForm(item=item) if request.user.can("manage_documents") else None
+    return render(request, "tracker/item_detail.html", {"item": item, "tickets": tickets, "documents": documents,
+                                                         "doc_form": doc_form, "doc_max_mb": _doc_max_mb()})
+
+
+def _doc_max_mb():
+    from django.conf import settings
+
+    return settings.DOCUMENT_MAX_UPLOAD_BYTES // (1024 * 1024)
 
 
 @require_perm("view")
@@ -121,12 +148,14 @@ def item_timeline(request, pk):
     fault_counts = {}
     for t in tickets:
         fault_counts[t.get_fault_type_display()] = fault_counts.get(t.get_fault_type_display(), 0) + 1
-    total_cost = item.tickets.aggregate(s=Sum("repair_cost"))["s"]
+    totals = item.tickets.aggregate(cost=Sum("repair_cost"), hours=Sum("repair_time"))
+    total_cost = totals["cost"]
     summary = {
         "tickets": len(tickets),
         "open": sum(1 for t in tickets if t.status in OPEN_STATUSES),
         "faults": sorted(fault_counts.items()),
         "total_cost": total_cost,
+        "total_hours": totals["hours"],
         "first": tickets[0].created_at if tickets else None,
         "last": tickets[-1].created_at if tickets else None,
     }
@@ -244,7 +273,7 @@ def ticket_detail(request, number):
         form = TicketForm(request.POST, request.FILES, instance=Ticket.objects.get(pk=ticket.pk))
         if form.is_valid():
             data = {f: form.cleaned_data[f] for f in
-                    ("status", "fault_type", "severity", "fault_description", "work_done", "repair_cost")}
+                    ("status", "fault_type", "severity", "fault_description", "work_done", "repair_cost", "repair_time")}
             try:
                 ticket, changed = update_ticket(
                     ticket, request.user, data, form.cleaned_data.get("version") or 0, form.cleaned_data.get("photos", [])
@@ -442,7 +471,10 @@ def bulk_tickets(request):
 
 @require_perm("view")
 def item_type_list(request):
-    types = ItemType.objects.annotate(item_count=Count("items"))
+    types = ItemType.objects.annotate(
+        item_count=Count("items", distinct=True),
+        doc_count=Count("documents", filter=Q(documents__removed_at__isnull=True), distinct=True),
+    )
     return render(request, "tracker/item_type_list.html", {"types": types})
 
 
@@ -459,7 +491,87 @@ def item_type_edit(request, pk=None):
         messages.success(request, f"Item type {saved} saved.")
         return redirect("item_type_list")
     title = f"Edit {item_type}" if item_type else "New item type"
-    return render(request, "tracker/item_type_form.html", {"form": form, "title": title})
+    documents = item_type.documents.filter(removed_at__isnull=True) if item_type else []
+    return render(request, "tracker/item_type_form.html", {
+        "form": form, "title": title, "item_type": item_type, "documents": documents,
+        "doc_form": DocumentForm() if item_type and request.user.can("manage_documents") else None,
+        "doc_max_mb": _doc_max_mb(),
+    })
+
+
+# ---------------------------------------------------------------- documents
+
+
+def _add_document(request, item_type, item, back):
+    from .documents import save_document
+
+    form = DocumentForm(request.POST, request.FILES, item=item)
+    if not form.is_valid():
+        messages.error(request, " ".join(e for errs in form.errors.values() for e in errs))
+        return redirect(back)
+    if item is not None and form.cleaned_data.get("attach_to") == "item":
+        item_type = None
+    else:
+        item = None
+    try:
+        file_name, original, content_type, size = save_document(form.cleaned_data["file"])
+    except ValidationError as exc:
+        messages.error(request, " ".join(exc.messages))
+        return redirect(back)
+    title = form.cleaned_data.get("title", "").strip() or original.rsplit(".", 1)[0]
+    doc = Document.objects.create(
+        item_type=item_type, item=item, title=title[:200], file_name=file_name, original_name=original,
+        content_type=content_type, size=size, uploaded_by=request.user,
+    )
+    record(request, "document", f"Added document “{doc.title}” to {doc.owner_label}", back)
+    messages.success(request, f"Added “{doc.title}”.")
+    return redirect(back)
+
+
+@require_POST
+@require_perm("manage_documents")
+def document_add_item(request, pk):
+    item = get_object_or_404(Item.objects.select_related("item_type"), pk=pk)
+    return _add_document(request, item.item_type, item, reverse("item_detail", args=[item.pk]) + "#documents")
+
+
+@require_POST
+@require_perm("manage_documents")
+def document_add_type(request, pk):
+    item_type = get_object_or_404(ItemType, pk=pk)
+    return _add_document(request, item_type, None, reverse("item_type_edit", args=[item_type.pk]) + "#documents")
+
+
+@require_perm("view")
+def document_open(request, pk):
+    from django.conf import settings
+
+    doc = get_object_or_404(Document, pk=pk, removed_at__isnull=True)
+    path = settings.DOCUMENTS_DIR / doc.file_name
+    if not path.is_file():
+        raise Http404
+    from .documents import INLINE
+
+    response = FileResponse(open(path, "rb"), content_type=doc.content_type,
+                            as_attachment=doc.content_type not in INLINE, filename=doc.original_name)
+    response["X-Content-Type-Options"] = "nosniff"
+    response["Content-Security-Policy"] = "sandbox"  # an uploaded file can't run scripts in the app
+    response["Cache-Control"] = "private, max-age=3600"
+    return response
+
+
+@require_POST
+@require_perm("manage_documents")
+def document_remove(request, pk):
+    doc = get_object_or_404(Document.objects.select_related("item", "item_type"), pk=pk)
+    back = request.POST.get("next", "")
+    if not back.startswith("/") or not url_has_allowed_host_and_scheme(back, {request.get_host()}):
+        back = reverse("item_detail", args=[doc.item_id]) if doc.item_id else reverse("item_type_edit", args=[doc.item_type_id])
+    if not doc.removed_at:
+        Document.objects.filter(pk=doc.pk).update(removed_at=timezone.now(), removed_by=request.user)
+        record(request, "document", f"Removed document “{doc.title}” from {doc.owner_label} (file kept)", back)
+        messages.success(request, f"Removed “{doc.title}”. The file is kept and the removal is logged.")
+    return redirect(back)
 
 
 # ---------------------------------------------------------------- reports
@@ -517,6 +629,7 @@ def reports(request):
             "results": True,
             "count": tickets.count(),
             "total_cost": tickets.aggregate(s=Sum("repair_cost"))["s"],
+            "total_hours": tickets.aggregate(s=Sum("repair_time"))["s"],
             "bulk_form": BulkTicketForm() if request.user.can("bulk_edit_tickets") else None,
             "tickets": tickets[:200],
             "filters": describe_filters(data),

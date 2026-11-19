@@ -28,6 +28,9 @@
   </div>
 </div>
 
+{% url 'document_add_item' item.pk as add_url %}
+{% include "tracker/_documents.html" with show_scope=True add_url=add_url %}
+
 {% if perms_ok.create_ticket and not item.is_written_off %}<a class="btn primary wide" href="{% url 'ticket_create' item.pk %}">+ Start new ticket</a>{% endif %}
 
 <h2>Tickets</h2>
