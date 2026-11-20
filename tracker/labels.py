@@ -100,21 +100,13 @@ def build_labels_pdf(tickets, fill_templates=False, template_severity="none", st
         pdf.rect(x, y, w, h, style="DF")
 
     def check_me_label(x, y):
-        """Bright pink: CHECK ME, a date box in the band, then Issued by and Issue write-in boxes."""
+        """Bright pink: CHECK ME band, then Date and Name write-in boxes."""
         strong, pale, on_band = COLOURS["checkme"]
         band(x, y, "checkme", "CHECK ME")
-        # Date box in the band, with a faint "date" hint inside it.
-        date_w = 11.0
-        date_x = x + LABEL_W - PAD - date_w
-        write_box(date_x, y + 0.8, date_w, 4.4, strong)
-        pdf.set_font(font, "", 4)
-        pdf.set_text_color(170, 170, 170)
-        pdf.set_xy(date_x + 0.4, y + 0.9)
-        pdf.cell(6, 1.8, "date")
-        head_w = 11.6
-        for i, heading in enumerate(("Issued by", "Issue")):
+        head_w = 8.6
+        for i, heading in enumerate(("Date", "Name")):
             row_y = y + 7.0 + i * 6.4
-            pdf.set_font(font, "B", 5)
+            pdf.set_font(font, "B", 6)
             pdf.set_text_color(70, 70, 70)
             pdf.set_xy(x + PAD, row_y)
             pdf.cell(head_w, 5.6, heading)
