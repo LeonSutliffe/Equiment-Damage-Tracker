@@ -1,6 +1,7 @@
 """Ticket reports: filter tickets and export them as Excel or PDF, optionally with photos."""
 
 import datetime as dt
+import re
 from io import BytesIO
 
 from django import forms
@@ -8,7 +9,7 @@ from django.conf import settings
 from django.db.models import Q
 from django.utils import timezone
 
-from .models import ItemType, Ticket, format_cost, format_hours
+from .models import Comment, ItemType, Ticket, format_cost, format_hours
 
 COLUMNS = ["Ticket", "Created", "Created by", "Status", "Fault Type", "Severity", "Item type", "Manufacturer", "Model name", "Barcode",
            "Serial number", "Previous job", "Fault Description", "Work Done", "Repair cost", "Repair time (hours)",
@@ -35,6 +36,11 @@ class ReportForm(forms.Form):
     text = forms.CharField(
         required=False, label="Contains text",
         help_text="Searches fault description, work done, previous job, barcode and serial number.",
+    )
+    exclude_text = forms.CharField(
+        required=False, label="Doesn't contain",
+        help_text="Leaves out tickets with any of these words in the fault description, work done, previous job, comments, "
+                  "barcode or serial number. Separate words with spaces or commas; put a phrase in \"quotes\".",
     )
     include_photos = forms.BooleanField(required=False, label="Include photos")
     fields = forms.MultipleChoiceField(
@@ -65,6 +71,16 @@ class ReportForm(forms.Form):
         if data.get("fields_set") and not data.get("fields"):
             raise forms.ValidationError("Choose at least one field to include (Choose fields…).")
         return data
+
+
+def exclude_words(raw):
+    """Split the "Doesn't contain" box into words: spaces or commas separate them, "quoted phrases" stay together."""
+    words = []
+    for phrase, word in re.findall(r'"([^"]*)"|([^\s,"]+)', raw or ""):
+        w = (phrase or word).strip()
+        if w and w.lower() not in (x.lower() for x in words):
+            words.append(w)
+    return words
 
 
 def selected_columns(data):
@@ -99,6 +115,12 @@ def filter_tickets(data):
             Q(fault_description__icontains=t) | Q(work_done__icontains=t) | Q(previous_job__icontains=t)
             | Q(item__barcode__icontains=t) | Q(item__serial_number__icontains=t)
         )
+    for w in exclude_words(data.get("exclude_text")):
+        commented = Comment.objects.filter(removed_at__isnull=True, text__icontains=w).values("ticket_id")
+        tickets = tickets.exclude(
+            Q(fault_description__icontains=w) | Q(work_done__icontains=w) | Q(previous_job__icontains=w)
+            | Q(item__barcode__icontains=w) | Q(item__serial_number__icontains=w) | Q(pk__in=commented)
+        )
     return tickets
 
 
@@ -117,6 +139,8 @@ def describe_filters(data):
             out.append((label, ", ".join(enum(v).label for v in data[key])))
     if data.get("text"):
         out.append(("Contains text", data["text"]))
+    if exclude_words(data.get("exclude_text")):
+        out.append(("Doesn't contain", ", ".join(exclude_words(data["exclude_text"]))))
     return out or [("Filters", "All tickets")]
 
 
