@@ -15,6 +15,7 @@
     </fieldset>
   {% endif %}{% endfor %}
   <div class="field"><label for="{{ form.text.id_for_label }}">{{ form.text.label }}</label>{{ form.text }}<small class="help">{{ form.text.help_text }}</small></div>
+  <div class="field"><label for="{{ form.exclude_text.id_for_label }}">{{ form.exclude_text.label }}</label>{{ form.exclude_text }}<small class="help">{{ form.exclude_text.help_text }}</small></div>
   <label class="check">{{ form.include_photos }} {{ form.include_photos.label }}</label>
   <div class="field-chooser">
     <button type="button" class="btn" data-fields-open>Choose fields…</button>

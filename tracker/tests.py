@@ -215,6 +215,33 @@ class ReportTests(TestCase):
         r = self.client.get(self.url, {"action": "view"})
         self.assertEqual(r.context["count"], 2)
 
+    def test_exclude_words(self):
+        from django.utils import timezone
+
+        from .models import Comment
+        from .reports import exclude_words
+
+        self.assertEqual(exclude_words('rung, Cracked  "loose bolt",rung'), ["rung", "Cracked", "loose bolt"])
+        drill_ok = create_ticket(self.drill_item, self.admin, {"fault_type": "cosmetic", "severity": "low",
+                                 "fault_description": "Scratched case"})
+        view = lambda words: sorted(t.code for t in self.client.get(
+            self.url, {"action": "view", "exclude_text": words}).context["tickets"])
+        self.assertEqual(view("RUNG"), sorted([self.t2.code, drill_ok.code]))  # case-insensitive
+        self.assertEqual(view("rung, scratched"), [self.t2.code])  # any word excludes
+        self.assertEqual(view('"loose bolt"'), sorted([self.t1.code, self.t2.code, drill_ok.code]))
+        self.assertEqual(view("222"), [self.t1.code])  # barcode
+        # Comments count, but removed (hidden) ones don't.
+        c = Comment.objects.create(ticket=self.t2, user=self.admin, text="Battery swollen")
+        self.assertNotIn(self.t2.code, view("swollen"))
+        Comment.objects.filter(pk=c.pk).update(removed_at=timezone.now(), removed_by=self.admin)
+        self.assertIn(self.t2.code, view("swollen"))
+        # Works with other filters and shows in the export header.
+        r = self.client.get(self.url, {"action": "view", "severities": ["low"], "exclude_text": "scratched"})
+        self.assertEqual(r.context["count"], 1)
+        self.assertIn(("Doesn't contain", "scratched"), r.context["filters"])
+        pdf = self.client.get(self.url, {"action": "pdf", "exclude_text": "rung"})
+        self.assertTrue(pdf.content.startswith(b"%PDF"))
+
     def test_xlsx_with_photos(self):
         from openpyxl import load_workbook
 
